@@ -1,0 +1,105 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   Tribe AI — brand tokens for standalone artifacts (visuals, slides, documents)
+
+   Drop this into any self-contained HTML file (inline in a <style> or linked)
+   to get the Tribe palette, type roles, radii and motion easing as CSS vars.
+   These values mirror lib/colors.tsx and the @theme in app/globals.css — the
+   website's source of truth. If a token changes there, change it here too.
+
+   Fonts: the real families (TribeSerif / TribeSans / TribeCaption) are local
+   files in /public/fonts of the website repo. For a portable artifact, either
+   embed them with @font-face pointing at copies you ship alongside the file,
+   or rely on the graceful fallback stacks below (close in feel, not identical).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Neutrals — warm off-white paper, near-black ink. Never pure #fff / #000. */
+  --background-primary: #FAFAF8;   /* default page surface */
+  --background-soft: #F4F4F2;
+  --background-secondary: #EBEBE2; /* alternating sections, cards on light */
+  --background-tertiary: #C7BDB2;  /* dividers, muted UI */
+  --background-quaternary: #A9A197;
+  --foreground-primary: #06141B;   /* primary ink + the dark surface color */
+  --foreground-secondary: #050F15; /* darkest surface (pre-footer) */
+  --foreground-tertiary: #0A1D2B;
+  --divider: rgb(6 20 27 / 0.1);
+  --logo-tint: #8A8276;
+
+  /* Brand — the single cyan signature. Links, focus, numerals, the Tusi figure.
+     Never a large fill of body text. */
+  --brand: #65D9EE;
+  --brand-contrast: #07404F;       /* ink for text/graphics ON a brand fill */
+  --brand-light: #C3D0D8;          /* body text on the dark footer */
+
+  /* Accents — sparingly: eyebrows, numerals, single cards, illustrations.
+     Cycle teal → brown → orange → yellow. Each has a *-contrast pair for text
+     sitting on that fill. Never body copy, never large background fills. */
+  --accent-teal: #0A99C3;          --accent-teal-contrast: #B2F3FF;
+  --accent-brown: #AD5913;         --accent-brown-contrast: #F4C29D;
+  --accent-orange: #FF7C0F;        --accent-orange-contrast: #6D1D00; /* canonical eyebrow */
+  --accent-yellow: #FEDE59;        --accent-yellow-contrast: #7C6503;
+  --accent-ocean: #0D4E6E;         --accent-ocean-contrast: #BEE6F5;
+
+  /* Type families. Replace the fallbacks with the real fonts when embedded. */
+  --font-serif: "TribeSerif", ui-serif, Georgia, "Times New Roman", serif;
+  --font-sans: "TribeSans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-caption: "TribeCaption", var(--font-sans);
+
+  /* Corner radius scale */
+  --rounded-sm: 0.25rem;   /* inline images inside cards */
+  --rounded-md: 0.375rem;  /* chips, buttons, menu items */
+  --rounded-lg: 0.5rem;    /* cards (default) */
+  --rounded-xl: 0.75rem;   /* large feature panels / media */
+  --rounded-2xl: 1rem;     /* hero media */
+  --rounded-full: 9999px;  /* pills, dots */
+
+  /* Motion — the house easing. Purposeful, eased, never bouncy. ~0.3–0.65s. */
+  --ease-tribe: cubic-bezier(0.625, 0.05, 0, 1);
+
+  /* Soft, tinted elevation keyed to the ink color — never generic gray shadow. */
+  --shadow-card: 0 30px 80px -30px rgba(6, 20, 27, 0.35);
+  --shadow-menu: 0 10px 30px -10px rgba(6, 20, 27, 0.35);
+}
+
+/* If you ship the real font files next to your artifact, uncomment and adjust
+   the paths. Light serif (300) and roman/light sans are the brand defaults. */
+/*
+@font-face { font-family: "TribeSerif";   src: url("./fonts/TribeSerif-Light.otf")    format("opentype"); font-weight: 300; }
+@font-face { font-family: "TribeSerif";   src: url("./fonts/TribeSerif-Book.otf")     format("opentype"); font-weight: 400; }
+@font-face { font-family: "TribeSans";    src: url("./fonts/TribeSans-Light.ttf")     format("truetype"); font-weight: 300; }
+@font-face { font-family: "TribeSans";    src: url("./fonts/TribeSans-Regular.ttf")   format("truetype"); font-weight: 400; }
+@font-face { font-family: "TribeCaption"; src: url("./fonts/TribeCaption-Regular.otf") format("opentype"); font-weight: 400; }
+*/
+
+/* Canonical type roles — apply these classes to match the website exactly. */
+.tribe-eyebrow {
+  font-family: var(--font-caption);
+  font-size: 0.75rem; font-weight: 400;
+  letter-spacing: 1.6px; line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--accent-orange); /* the canonical eyebrow color */
+}
+.tribe-display {
+  font-family: var(--font-serif); font-weight: 300;
+  font-size: clamp(2.25rem, 5vw, 3.75rem); line-height: 1.1;
+  text-wrap: balance;
+}
+.tribe-h2 {
+  font-family: var(--font-serif); font-weight: 300;
+  font-size: 3rem; line-height: 1.1; text-wrap: balance;
+}
+.tribe-h3 {
+  font-family: var(--font-serif); font-weight: 300;
+  font-size: 1.5rem; line-height: 1.2;
+}
+.tribe-body {
+  font-family: var(--font-sans); font-weight: 300;
+  font-size: 1rem; line-height: 1.625;
+  color: rgb(6 20 27 / 0.7); /* body sits at /70 on a light surface */
+}
+.tribe-body-lead { font-size: 1.125rem; }
+.tribe-meta {
+  font-family: var(--font-sans); font-weight: 400;
+  font-size: 0.75rem; line-height: 1.4;
+  color: rgb(6 20 27 / 0.55);
+}

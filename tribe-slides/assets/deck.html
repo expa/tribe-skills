@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tribe — Deck</title>
+<style>
+  :root {
+    --paper: #FAFAF8; --paper-2: #EBEBE2; --ink: #06141B; --ink-2: #050F15;
+    --brand: #65D9EE; --brand-contrast: #07404F; --brand-light: #C3D0D8;
+    --accent-teal: #0A99C3; --accent-brown: #AD5913;
+    --accent-orange: #FF7C0F; --accent-yellow: #FEDE59;
+    --serif: "TribeSerif", ui-serif, Georgia, "Times New Roman", serif;
+    --sans: "TribeSans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --ease: cubic-bezier(0.625, 0.05, 0, 1);
+  }
+  /* For exact type, ship the real fonts and add @font-face here (see tribe-brand). */
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { background: #1b1b1b; font-family: var(--sans); }
+
+  .deck { width: 100vw; height: 100vh; overflow: hidden; }
+  .slide {
+    width: 100vw; height: 100vh; padding: 7vw 8vw;
+    display: none; flex-direction: column; justify-content: center; gap: 2.2vh;
+    position: relative; overflow: hidden;
+    background: var(--paper); color: var(--ink);
+  }
+  .slide.active { display: flex; animation: fade 0.45s var(--ease); }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .slide.active { animation: none; } }
+
+  /* Inverted slides for dividers / close. */
+  .slide.dark { background: var(--ink); color: var(--paper); }
+  .slide.dark .support { color: var(--brand-light); }
+
+  /* Accent driven per-slide via data-accent (set --a on the section). */
+  .slide[data-accent="teal"]   { --a: var(--accent-teal); }
+  .slide[data-accent="brown"]  { --a: var(--accent-brown); }
+  .slide[data-accent="orange"] { --a: var(--accent-orange); }
+  .slide[data-accent="yellow"] { --a: var(--accent-yellow); }
+
+  .eyebrow { font-family: var(--sans); font-size: 1.1vw; font-weight: 400;
+             letter-spacing: 0.18em; text-transform: uppercase; color: var(--a, var(--accent-orange)); }
+  .title { font-family: var(--serif); font-weight: 300; font-size: 4.6vw;
+           line-height: 1.08; text-wrap: balance; max-width: 20ch; }
+  .title.big { font-size: 6vw; max-width: 16ch; }
+  .support { font-family: var(--sans); font-weight: 300; font-size: 1.7vw;
+             line-height: 1.5; color: rgb(6 20 27 / 0.7); max-width: 46ch; }
+  .meta { font-family: var(--sans); font-size: 1vw; letter-spacing: 0.14em;
+          text-transform: uppercase; color: rgb(6 20 27 / 0.55); }
+  .dark .meta { color: var(--brand-light); }
+
+  .numeral { font-family: var(--serif); font-weight: 300; font-size: 9vw; line-height: 1; color: var(--a); }
+  .stat { font-family: var(--serif); font-weight: 300; font-size: 11vw; line-height: 1; color: var(--brand); }
+  .stat-label { font-family: var(--sans); font-size: 1.3vw; letter-spacing: 0.12em;
+                text-transform: uppercase; color: rgb(6 20 27 / 0.55); margin-top: 1.5vh; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.4vw; margin-top: 1vh; }
+  .card { background: var(--paper-2); border-radius: 0.5rem; padding: 2vw; }
+  .card h3 { font-family: var(--serif); font-weight: 300; font-size: 1.9vw; line-height: 1.15; }
+  .card p { font-family: var(--sans); font-weight: 300; font-size: 1.2vw; line-height: 1.5;
+            color: rgb(6 20 27 / 0.7); margin-top: 0.8vh; }
+
+  .wordmark { font-family: var(--serif); font-weight: 300; font-size: 2.4vw; }
+
+  /* Orbital motif bleeding off an edge. */
+  .motif { position: absolute; right: -8vw; top: -8vw; width: 36vw; height: 36vw; opacity: 0.85; }
+  .motif line { stroke: currentColor; stroke-opacity: 0.15; stroke-width: 1.5; }
+  .motif .dot { fill: var(--brand); }
+  .motif .node { fill: currentColor; }
+
+  /* Footer progress + nav hint. */
+  .hud { position: fixed; bottom: 3vh; left: 0; right: 0; display: flex;
+         justify-content: center; gap: 8px; pointer-events: none; }
+  .hud i { width: 7px; height: 7px; border-radius: 9999px; background: rgb(6 20 27 / 0.2); }
+  .hud i.on { background: var(--ink); }
+
+  /* Print: one slide per page. */
+  @media print {
+    @page { size: 1280px 720px; margin: 0; }
+    body { background: #fff; }
+    .deck { height: auto; }
+    .slide { display: flex !important; page-break-after: always; width: 1280px; height: 720px; }
+    .hud { display: none; }
+    .eyebrow, .meta, .stat-label { font-size: 14px; }
+    .title { font-size: 56px; } .title.big { font-size: 76px; }
+    .support { font-size: 22px; } .numeral { font-size: 120px; } .stat { font-size: 150px; }
+    .card h3 { font-size: 24px; } .card p { font-size: 16px; } .wordmark { font-size: 32px; }
+    .motif { width: 460px; height: 460px; }
+  }
+</style>
+</head>
+<body>
+  <div class="deck">
+    <!-- TITLE -->
+    <section class="slide active" data-accent="orange">
+      <svg class="motif" viewBox="0 0 400 400" aria-hidden="true">
+        <line x1="80" y1="90" x2="220" y2="180"/><line x1="220" y1="180" x2="150" y2="290"/>
+        <line x1="220" y1="180" x2="330" y2="130"/>
+        <circle class="node" cx="220" cy="180" r="5"/>
+        <circle class="dot" cx="80" cy="90" r="8"/><circle class="dot" cx="330" cy="130" r="6"/>
+        <circle class="dot" cx="150" cy="290" r="10"/>
+      </svg>
+      <p class="eyebrow">Tribe AI</p>
+      <h1 class="title big">A network model for serious AI work.</h1>
+      <p class="meta">Prepared for Acme · June 2026</p>
+    </section>
+
+    <!-- SECTION DIVIDER (inverted) -->
+    <section class="slide dark" data-accent="teal">
+      <span class="numeral">01</span>
+      <h2 class="title">Where the value actually is</h2>
+    </section>
+
+    <!-- CONTENT (cards) -->
+    <section class="slide" data-accent="brown">
+      <p class="eyebrow">How we work</p>
+      <h2 class="title">Three ways the engagement compounds</h2>
+      <div class="cards">
+        <div class="card"><h3>Senior by default</h3><p>The people on the problem have shipped it before.</p></div>
+        <div class="card"><h3>Network, not bench</h3><p>The right specialist, matched to the moment.</p></div>
+        <div class="card"><h3>Built to hand off</h3><p>Your team owns it when we leave.</p></div>
+      </div>
+    </section>
+
+    <!-- STAT -->
+    <section class="slide" data-accent="teal" style="align-items:center;text-align:center;">
+      <p class="eyebrow">Outcome</p>
+      <div class="stat">3×</div>
+      <p class="stat-label">faster to a production model</p>
+    </section>
+
+    <!-- CLOSE (inverted) -->
+    <section class="slide dark" data-accent="orange">
+      <span class="wordmark">Tribe</span>
+      <h2 class="title">Let's put the right people on it.</h2>
+      <p class="meta">hello@tribe.ai · tribe.ai</p>
+    </section>
+  </div>
+
+  <div class="hud" id="hud"></div>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const hud = document.getElementById('hud');
+    slides.forEach(() => hud.insertAdjacentHTML('beforeend', '<i></i>'));
+    const dots = [...hud.children];
+    let i = 0;
+    function show(n) {
+      i = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach((s, k) => s.classList.toggle('active', k === i));
+      dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    }
+    show(0);
+    addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(i + 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(i - 1); }
+      if (e.key === 'Home') show(0);
+      if (e.key === 'End') show(slides.length - 1);
+    });
+    addEventListener('click', (e) => { if (!e.target.closest('a')) show(i + 1); });
+  </script>
+</body>
+</html>
