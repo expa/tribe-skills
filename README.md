@@ -39,19 +39,21 @@ cp -r tribe-skills/tribe-* ~/.claude/skills/
 
 ### Claude apps (claude.ai & Claude Desktop)
 
-The Claude apps load Skills as uploaded folders. Zip each skill, then add it
-under **Settings → Capabilities → Skills → Upload skill** (Pro/Team/Enterprise;
-the Skills capability must be enabled for your workspace):
+The Claude apps load Skills as uploaded folders — no command line needed:
 
-```bash
-git clone https://github.com/tribeai/tribe-skills
-cd tribe-skills
-for s in tribe-*/; do zip -r "${s%/}.zip" "$s"; done   # one .zip per skill
-```
+1. **Download the repo.** On the [repo page](https://github.com/tribeai/tribe-skills),
+   click the green **Code** button → **Download ZIP**, then unzip it. Each
+   `tribe-*` folder inside is one skill.
+2. **Zip each skill on its own.** A skill uploads as a single folder, so
+   compress the folders individually (not the whole download): right-click a
+   `tribe-*` folder → **Compress** (macOS) or **Send to → Compressed (zipped)
+   folder** (Windows). You'll get `tribe-brand.zip`, `tribe-visuals.zip`, etc.
+3. **Upload in the app.** Go to **Settings → Capabilities → Skills → Upload
+   skill** (the Skills capability must be enabled for your workspace) and upload
+   `tribe-brand.zip` first — the others reference it — then the rest.
 
-Upload `tribe-brand.zip` first (the others reference it), then the rest. Once
-uploaded, Claude auto-selects the right skill from what you ask — same as in
-Claude Code. Re-upload a skill's zip to update it after a change.
+Once uploaded, Claude auto-selects the right skill from what you ask, same as in
+Claude Code. To update a skill after a change, re-download and re-upload its zip.
 
 ## How & when to use
 
