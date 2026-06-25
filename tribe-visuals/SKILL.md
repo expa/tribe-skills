@@ -18,22 +18,44 @@ skill applies that system at fixed export dimensions. Output is a
 **self-contained HTML file** (inline CSS, inline/data-URI assets) sized exactly
 to the target so it can be screenshotted or rendered to PNG at 1×/2×.
 
-## In-house generators (prefer these when they fit)
+## In-house generators (use these for figure art & backgrounds)
 
-The website already ships interactive generators under `/handbook`. Reach for
-them before hand-rolling, and match their look when you do hand-roll:
+The Tribe site ships interactive generators at **`https://tribe.ai/handbook/…`**.
+Three of them produce reusable **figure art and backgrounds** you can drop into a
+visual, a slide, or a card — prefer them over hand-drawing the motif, and match
+their look when you do hand-roll:
 
-- **Article Cover** (`/handbook/article-cover`) — generative node-graph cover
-  art from a source photo, palette and layout.
-- **Case Study Cover** (`/handbook/case-study-cover`) — pattern-driven covers
-  (palettes, density, flow, optional photo mix).
-- **Profile Picture** (`/handbook/profile-picture`) — restyle a headshot into an
-  on-brand portrait.
-- **Email Signature** (`/handbook/email-signature`) — 600×200 signature with the
-  Tusi orbital figure.
-- **Social Asset Preview** (`/handbook/social-preview`) — mock avatars/banners
-  on real LinkedIn & X profiles before exporting.
-- **Animation** (`/handbook/animation`) — tune & export the Tusi orbital figure.
+- **Animation** — `https://tribe.ai/handbook/animation` — the Tusi orbital
+  figure. Tune rails, dots, draw and motion. Exports a **still (PNG/WEBP)** for a
+  static background or accent, or **motion (WEBM)** for a moving slide/section
+  background. Procedural — no upload needed. *Use as the hero motif, a section
+  background, or a quiet accent — static or animated.*
+- **Article Cover** — `https://tribe.ai/handbook/article-cover` — generative
+  node-graph cover art (palette + layout). Exports **PNG / WEBP / SVG**.
+  Procedural. *Use to illustrate a slide or card, or to add impact to a header.*
+- **Case Study Cover** — `https://tribe.ai/handbook/case-study-cover` —
+  pattern-driven covers (palette, density, flow, ratio 1:1 / 16:9 / 3:2), with an
+  **optional** source-photo mix. Deterministic from the title. Exports
+  **PNG / WEBP**. *Use as a cover, a slide background, or a card image.*
+
+How to use the output: drop the exported file into a slide/card/`<img>`, or set
+it as a `background-image` (use a still for a static background, the WEBM for a
+moving one). Keep the brand rules from `tribe-brand` — the figure is an accent,
+not a loud full-bleed fill; let the paper breathe.
+
+> **Admin-only.** `Profile Picture`, `Email Signature` and `Social Asset Preview`
+> are internal-only tools (some call external services / private data) and are
+> locked for outsiders — don't route public/agent work through them.
+
+> **Generating these programmatically (maintainer note).** Today all three are
+> **interactive, browser-only** tools: a person opens the page, configures it, and
+> clicks Download. There is **no URL-parameter or HTTP API** that returns an
+> image, so an AI agent cannot fetch one directly — it must be handed an exported
+> file, or drive the page in a headless browser. To make them agent-callable,
+> wire each page's config to `searchParams` (+ an `?auto=1` render-and-signal
+> mode) and add a token-gated render route (puppeteer-core + @sparticuz/chromium,
+> needed because the animation is WebGL). Until that exists, treat generator
+> output as a human-supplied asset.
 
 ## Canonical dimensions
 

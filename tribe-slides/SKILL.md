@@ -31,6 +31,14 @@ prints to PDF (one slide per page).
   label beneath. Let it stand alone.
 - **Motif, not clip-art.** Anchor a divider or the title slide with the
   node/orbital figure bleeding off an edge. No stock icons, no gradients.
+- **Cover art & backgrounds from the generators.** For real impact — a title
+  slide, a section divider, a hero card — use art exported from the in-house
+  generators rather than drawing it inline (see `tribe-visuals` → "In-house
+  generators"). The **Animation** generator gives a still or a WEBM for a static
+  or moving slide background; **Article Cover** / **Case Study Cover** give cover
+  images to illustrate a slide or card. Keep them as accents behind generous
+  paper — not loud full-bleed fills. (These are exported by hand today, then
+  embedded; there's no agent API yet.)
 - **Restrained motion** — a quiet fade between slides is plenty; respect
   `prefers-reduced-motion`. No flashy transitions.
 
