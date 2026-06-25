@@ -37,6 +37,22 @@ git clone https://github.com/tribeai/tribe-skills
 cp -r tribe-skills/tribe-* ~/.claude/skills/
 ```
 
+### Claude apps (claude.ai & Claude Desktop)
+
+The Claude apps load Skills as uploaded folders. Zip each skill, then add it
+under **Settings → Capabilities → Skills → Upload skill** (Pro/Team/Enterprise;
+the Skills capability must be enabled for your workspace):
+
+```bash
+git clone https://github.com/tribeai/tribe-skills
+cd tribe-skills
+for s in tribe-*/; do zip -r "${s%/}.zip" "$s"; done   # one .zip per skill
+```
+
+Upload `tribe-brand.zip` first (the others reference it), then the rest. Once
+uploaded, Claude auto-selects the right skill from what you ask — same as in
+Claude Code. Re-upload a skill's zip to update it after a change.
+
 ## How & when to use
 
 You don't invoke skills directly — the assistant **auto-selects** them from your
