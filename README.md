@@ -37,7 +37,7 @@ thing that needs the website repo is `web-pages` (it *is* website work).
 ### Claude Code (terminal)
 
 ```bash
-git clone https://github.com/tribeai/tribe-skills
+git clone https://github.com/expa/tribe-skills
 cp -r tribe-skills/tribe-design ~/.claude/skills/        # all projects
 # or: cp -r tribe-skills/tribe-design <project>/.claude/skills/   # one project
 ```
@@ -94,7 +94,7 @@ generator, original website sources kept in `tool/reference/`), `assets/`
 
 ## Keeping in sync
 
-The [website repo](https://github.com/tribeai/tribe-website) is the source of
+The [website repo](https://github.com/TribeAI/tribe) is the source of
 truth; this skill mirrors it. When something changes there, update here:
 
 - **Tokens** — `app/globals.css` `@theme` → `tribe-design/brand/assets/tribe-tokens.css`
