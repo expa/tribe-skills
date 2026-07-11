@@ -1,0 +1,17 @@
+{
+  "title": "Order platform — high level",
+  "nodes": [
+    { "id": "client", "label": "Web Client", "subLabel": "Next.js", "shape": "pill", "color": "default" },
+    { "id": "api", "label": "API Gateway", "subLabel": "auth + routing", "shape": "rounded", "color": "brand" },
+    { "id": "orders", "label": "Orders Service", "shape": "rounded", "color": "default" },
+    { "id": "db", "label": "Postgres", "subLabel": "orders db", "shape": "rect", "color": "ocean" },
+    { "id": "cache", "label": "Redis Cache", "shape": "rect", "color": "yellow" },
+    { "id": "b1", "kind": "badge", "label": "1", "color": "brand", "parentId": "api", "anchor": "tr" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "client", "to": "api", "label": "requests" },
+    { "id": "e2", "from": "api", "to": "orders" },
+    { "id": "e3", "from": "orders", "to": "db", "label": "reads/writes" },
+    { "id": "e4", "from": "orders", "to": "cache", "label": "cache", "dashed": true }
+  ]
+}

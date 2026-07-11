@@ -1,0 +1,53 @@
+{
+  "_comment": "Tusi animation presets, extracted from website/app/handbook/animation/AnimationStudio.tsx (SECTION_PRESETS + ORBIT_PRESET). Each entry is a full studio Settings object; tusi.html inlines the same data and applies it via ?preset=<name>. Any key can be overridden via ?params=<JSON>.",
+  "defaults": {
+    "numRails": 6, "showOuter": false, "showInner": true, "showRails": false,
+    "phase": false, "overlap": false, "tilt": 0, "rotation": 0, "draw": 100,
+    "showConnections": false, "showCrown": false, "dotSize": 10, "speed": 10,
+    "trailSize": 0, "circleSize": 50, "xOffset": 0,
+    "meridians": 0, "meridianSpread": 360, "meridianDraw": 100, "spinRings": false,
+    "orbit": false, "multiplyDots": false, "heroOverlay": false
+  },
+  "presets": {
+    "home": {
+      "numRails": 2, "showOuter": true, "showInner": true, "showRails": true,
+      "phase": false, "overlap": true, "tilt": 85, "rotation": 0, "draw": 0,
+      "showConnections": false, "showCrown": false, "dotSize": 24, "speed": 15,
+      "trailSize": 20, "circleSize": 60, "xOffset": 0,
+      "meridians": 8, "meridianSpread": 360, "meridianDraw": 100, "spinRings": true,
+      "orbit": false, "multiplyDots": true, "heroOverlay": true
+    },
+    "what-we-do": {
+      "numRails": 2, "showOuter": true, "showInner": true, "showRails": true,
+      "phase": false, "overlap": false, "tilt": 0, "rotation": 90, "draw": 100,
+      "showConnections": true, "showCrown": false, "dotSize": 20, "speed": 24,
+      "trailSize": 0, "circleSize": 40, "xOffset": 0,
+      "meridians": 8, "meridianSpread": 0, "meridianDraw": 100, "spinRings": true,
+      "orbit": false, "multiplyDots": true, "heroOverlay": false
+    },
+    "model": {
+      "numRails": 20, "showOuter": true, "showInner": false, "showRails": true,
+      "phase": true, "overlap": false, "tilt": 0, "rotation": 0, "draw": 100,
+      "showConnections": true, "showCrown": true, "dotSize": 20, "speed": 6,
+      "trailSize": 0, "circleSize": 60, "xOffset": 0,
+      "meridians": 0, "meridianSpread": 360, "meridianDraw": 100, "spinRings": false,
+      "orbit": false, "multiplyDots": true, "heroOverlay": false
+    },
+    "partners": {
+      "numRails": 6, "showOuter": false, "showInner": true, "showRails": false,
+      "phase": false, "overlap": false, "tilt": 0, "rotation": 0, "draw": 100,
+      "showConnections": false, "showCrown": false, "dotSize": 20, "speed": 6,
+      "trailSize": 0, "circleSize": 50, "xOffset": 0,
+      "meridians": 0, "meridianSpread": 360, "meridianDraw": 100, "spinRings": false,
+      "orbit": false, "multiplyDots": true, "heroOverlay": false
+    },
+    "orbit": {
+      "numRails": 8, "showOuter": true, "showInner": false, "showRails": false,
+      "phase": false, "overlap": true, "tilt": 85, "rotation": 0, "draw": 0,
+      "showConnections": false, "showCrown": false, "dotSize": 24, "speed": 20,
+      "trailSize": 0, "circleSize": 40, "xOffset": 0,
+      "meridians": 8, "meridianSpread": 360, "meridianDraw": 100, "spinRings": true,
+      "orbit": true, "multiplyDots": false, "heroOverlay": false
+    }
+  }
+}

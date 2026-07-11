@@ -1,0 +1,73 @@
+/* Deck builder — print rules (loaded only on this route via the page import).
+   On screen the editor chrome shows; printing reveals the full deck (.print-deck,
+   hidden on screen) one slide per page at 1280×720. */
+.print-deck { display: none; }
+
+/* Canvas surface — every screen that displays slides (editor feed, immersive
+   overview, deck gallery, slide library) uses this so slides always pop:
+   default = cool divider tint over paper (right for paper & dark decks);
+   soft decks swap to white so their soft-grey slides stand out. */
+.deck-canvas {
+  background-color: var(--color-background-primary);
+  background-image: linear-gradient(var(--color-divider), var(--color-divider));
+}
+.deck-canvas--white {
+  background-color: #fff;
+  background-image: none;
+}
+
+/* Present-mode slide crossfade */
+@keyframes deck-slide-fade { from { opacity: 0; } to { opacity: 1; } }
+.deck-slide-in { animation: deck-slide-fade 0.5s ease both; }
+.deck-slide-out { animation: deck-slide-fade 0.5s ease reverse both; }
+@media (prefers-reduced-motion: reduce) {
+  .deck-slide-in, .deck-slide-out { animation-duration: 0.01s; }
+}
+
+/* Full-screen overlay enter/exit — the deck gallery. */
+@keyframes deck-overlay-in {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes deck-overlay-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(16px); }
+}
+.deck-overlay-in { animation: deck-overlay-in 0.5s cubic-bezier(0.625, 0.05, 0, 1) both; }
+.deck-overlay-out { animation: deck-overlay-out 0.35s cubic-bezier(0.625, 0.05, 0, 1) both; }
+
+/* Canvas click-to-focus: editable regions get a quiet hover affordance in the
+   editor feed only (.deck-editable is set by the active FeedSlide — never in
+   present / print / share contexts). */
+.deck-editable [data-field] { cursor: text; }
+.deck-editable [data-field]:hover {
+  outline: 1px dashed color-mix(in srgb, var(--color-foreground-primary) 30%, transparent);
+  outline-offset: 8px;
+  border-radius: 2px;
+}
+
+/* Brief flash tying a canvas element to its sidebar field after a click. */
+@keyframes deck-field-flash {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand) 55%, transparent); }
+  35% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-brand) 35%, transparent); }
+  100% { box-shadow: 0 0 0 5px transparent; }
+}
+.deck-field-flash { animation: deck-field-flash 0.9s ease both; border-radius: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .deck-overlay-in, .deck-overlay-out, .deck-field-flash { animation-duration: 0.01s; }
+}
+
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-deck { display: block !important; }
+  .print-deck .slide-frame {
+    box-shadow: none !important;
+    border: none !important;
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-deck .slide-frame:last-child { break-after: auto; page-break-after: auto; }
+  @page { size: 1280px 720px; margin: 0; }
+}

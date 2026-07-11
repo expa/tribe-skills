@@ -1,81 +1,108 @@
-# Tribe AI — Design Skills
+# tribe-design
 
-A set of **agent skills** that teach an AI assistant (Claude Code, Claude
-Desktop, or any tool that supports the [Agent Skills](https://docs.claude.com)
-format) how to make things that look and read unmistakably like Tribe — websites,
-social graphics, slides, and documents.
+One **Agent Skill** that teaches an AI assistant everything about making Tribe
+things — the brand, the writing voice, and a set of **runnable generators**
+that export finished, on-brand assets: social cards, charts, cover art, the
+Tusi animation, slide decks, system diagrams, and documents.
 
-## The skills
+Works with Claude Code, Claude Desktop, claude.ai, and any tool that supports
+the [Agent Skills](https://docs.claude.com) format. Lives in this repo at
+[`tribe-design/`](tribe-design/).
 
-| Skill | What it does |
-|---|---|
-| **tribe-brand** | The visual identity — color tokens, typography roles, logo usage, motion, do's & don'ts. The foundation every other skill references. |
-| **tribe-web-pages** | Building pages on the Tribe website (Next.js + Payload): page skeleton, the component library, CMS-driven copy rules, the migrations workflow. |
-| **tribe-visuals** | On-brand marketing & social graphics (LinkedIn / X / OG / quote cards) as self-contained HTML/SVG at correct export dimensions. |
-| **tribe-slides** | On-brand 16:9 presentation decks as self-contained, keyboard-navigable, print-to-PDF HTML. |
-| **tribe-documents** | On-brand long-form documents (proposals, one-pagers, reports) as self-contained, print-ready HTML. |
+## What it can make
 
-Each skill is a folder with a `SKILL.md` (YAML frontmatter + instructions) and,
-where useful, an `assets/` folder with copy-paste tokens and working templates.
+| Ask for | It uses | You get |
+|---|---|---|
+| A quote, stat, or announcement graphic | `social-card` | PNG · 1:1, 4:5, 9:16 |
+| A chart from your numbers | `data-card` | PNG · 1:1, 16:9, 4:5 |
+| Abstract cover / background art | `article-cover` | PNG, SVG, animated WEBM |
+| The Tusi orbital figure (hero art, video background) | `animation` | transparent PNG, WEBM |
+| A pitch deck, case study, proposal deck | `deck-builder` | browser preview + vector PDF |
+| A system diagram or flowchart | `diagram` | SVG, PNG |
+| A proposal, one-pager, report | `documents` | print-ready HTML → PDF |
+| Copy that sounds like Tribe | `voice` | website & article registers |
+| Brand rules, tokens, fonts, logos | `brand` | the source of truth, bundled |
+| Pages on tribe.ai | `web-pages` | code (needs the website repo) |
+
+And it **composes**: a Tusi still becomes a slide background, a chart drops
+into a proposal, a diagram lands in a deck. The assistant routes between
+sub-skills on its own — you just describe the outcome.
+
+Everything is self-contained: real brand fonts, every logo variant, ported
+generator code, and verified example renders ship inside the skill. The only
+thing that needs the website repo is `web-pages` (it *is* website work).
 
 ## Install
 
-```bash
-npx skills add tribeai/tribe-skills
-```
-
-That installs all five skills. To install just one, point your tool at a single
-folder (e.g. `tribe-slides/`) — each skill is self-contained:
-`tribe-visuals`, `tribe-slides`, and `tribe-documents` carry their own tokens
-and templates and only *reference* `tribe-brand` for the full system, so they
-work standalone too.
-
-You can also copy the folders straight into your personal skills directory:
+### Claude Code (terminal)
 
 ```bash
 git clone https://github.com/tribeai/tribe-skills
-cp -r tribe-skills/tribe-* ~/.claude/skills/
+cp -r tribe-skills/tribe-design ~/.claude/skills/        # all projects
+# or: cp -r tribe-skills/tribe-design <project>/.claude/skills/   # one project
 ```
 
-### Claude apps (claude.ai & Claude Desktop)
+One-time setup for image/video/PDF exports (installs `playwright-core`; uses
+the Chrome you already have):
 
-The Claude apps load Skills as uploaded folders — no command line needed:
+```bash
+cd ~/.claude/skills/tribe-design/scripts && npm install
+```
 
-1. **Download the repo.** On the [repo page](https://github.com/tribeai/tribe-skills),
-   click the green **Code** button → **Download ZIP**, then unzip it. Each
-   `tribe-*` folder inside is one skill.
-2. **Zip each skill on its own.** A skill uploads as a single folder, so
-   compress the folders individually (not the whole download): right-click a
-   `tribe-*` folder → **Compress** (macOS) or **Send to → Compressed (zipped)
-   folder** (Windows). You'll get `tribe-brand.zip`, `tribe-visuals.zip`, etc.
-3. **Upload in the app.** Go to **Settings → Capabilities → Skills → Upload
-   skill** (the Skills capability must be enabled for your workspace) and upload
-   `tribe-brand.zip` first — the others reference it — then the rest.
+That's it. In any session, just ask: *"make a quote card from this line"*,
+*"turn these notes into a pitch deck"*, *"diagram our RAG pipeline"* — Claude
+finds the skill, generates the asset, and exports the file.
 
-Once uploaded, Claude auto-selects the right skill from what you ask, same as in
-Claude Code. To update a skill after a change, re-download and re-upload its zip.
+### Claude Desktop & claude.ai (no terminal)
 
-## How & when to use
+1. **Download**: on this repo's page, **Code → Download ZIP**, unzip.
+2. **Zip the skill folder**: right-click the `tribe-design` folder →
+   **Compress** (macOS) / **Send to → Compressed folder** (Windows).
+3. **Upload**: in Claude, **Settings → Capabilities → Skills → Upload skill**,
+   pick `tribe-design.zip`. (The Skills capability must be enabled for your
+   workspace.)
 
-You don't invoke skills directly — the assistant **auto-selects** them from your
-request, based on each skill's `description`. Just ask in plain language:
+Then just ask, same as above. One difference: the Claude apps can't run the
+headless export scripts, so Claude hands you the artifact to finish in your
+browser — e.g. a deck preview you open and print to PDF (Cmd+P), or a
+self-contained HTML card you screenshot. Decks are zero-friction: Claude
+gives you a link/file, arrow keys present it, printing exports it.
 
-- *"Make a LinkedIn banner announcing our new case study"* → `tribe-visuals`
-- *"Turn this into an on-brand pitch deck"* → `tribe-slides`
-- *"Draft a one-pager proposal for Acme"* → `tribe-documents`
-- *"Add an industries section to the site"* → `tribe-web-pages` (+ `tribe-brand`)
-- *"Is this on-brand?"* / *"What are our brand colors?"* → `tribe-brand`
+To update after a new release: re-download and re-upload the zip.
 
-For visuals/slides/documents the output is a self-contained HTML file you can
-open, screenshot, or print to PDF. For pixel-exact type, drop copies of the real
-fonts (from the website's `/public/fonts`) next to the file and uncomment the
-`@font-face` block in the template.
+## How it's organized
+
+```
+tribe-design/
+├── SKILL.md            the router — brand summary, routing, composition recipes
+├── scripts/render.mjs  shared headless exporter (PNG / PDF / WEBM)
+├── brand/              tokens, real fonts, all logo variants, the rules
+├── voice/              how Tribe writes, distilled from published work
+├── animation/          Tusi figure generator
+├── social-card/        quote / statement / stat / partner cards
+├── data-card/          bar & line chart cards
+├── article-cover/      generative node artwork
+├── deck-builder/       deck JSON → standalone renderer → vector PDF
+├── diagram/            diagram JSON → auto-layout → branded SVG/PNG
+├── documents/          long-form document templates
+└── web-pages/          guide for building pages in the website repo
+```
+
+Each sub-skill: a `SKILL.md` the assistant reads on demand, `tool/` (runnable
+generator, original website sources kept in `tool/reference/`), `assets/`
+(templates), `examples/` (verified renders it compares its output against).
 
 ## Keeping in sync
 
-The brand tokens are the source of truth in the Tribe website repo and are
-mirrored here. They appear in **three places that must stay in sync**:
-`lib/colors.tsx` (canvas hex, source of truth) and the `@theme` in
-`app/globals.css` (CSS vars) in the website, and `tribe-brand/assets/tribe-tokens.css`
-here (for standalone artifacts). Change one → change all three, and update
-`tribe-brand/SKILL.md` and the website's `DESIGN.md` if a role or rule changes.
+The [website repo](https://github.com/tribeai/tribe-website) is the source of
+truth; this skill mirrors it. When something changes there, update here:
+
+- **Tokens** — `app/globals.css` `@theme` → `tribe-design/brand/assets/tribe-tokens.css`
+- **Fonts / logos** — `public/fonts`, `public/brand` → `tribe-design/brand/assets/`
+- **Generators** — `app/handbook/*` + `lib/*` → each sub-skill's `tool/`
+  (diff against `tool/reference/`)
+- **Voice** — re-distill from published articles when the body of writing
+  meaningfully grows
+
+House rules worth repeating: eyebrows are **ink, never orange**; the serif is
+never bold; one accent per artifact; warm paper, never pure white.

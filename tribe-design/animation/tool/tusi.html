@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tribe Tusi Animation</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+</style>
+</head>
+<body>
+<canvas id="tusi"></canvas>
+<script>
+'use strict'
+// ═══════════════════════════════════════════════════════════════════════════
+// Tribe "Tusi" orbital animation — standalone param-driven harness.
+// Faithful vanilla-JS port of website/app/components/TusiAnimation.tsx
+// (Canvas2D draw loop) + the preset/derivation logic of AnimationStudio.tsx.
+// Scroll-driven features (hero text, scroll sentences, scroll fades) are
+// omitted / pinned to their scrollY=0 resting state, which matches how the
+// studio renders (no scroll).
+//
+// URL params:
+//   ?preset=home|what-we-do|model|partners|orbit
+//   ?params=<URI-encoded JSON>       merged over DEFAULTS (and the preset)
+//   ?background=<css color|transparent>   canvas paint (default: preset-driven)
+//   ?size=<px>       backing-store longest edge (default 2000)
+//   ?dpr=<n>         explicit backing-store pixel ratio (overrides size)
+//   ?play=0|1        0 = static frame (default), 1 = live animation
+//   ?t=<seconds>     still: the frame time to render (default 4).
+//                    play: pre-roll simulated before live playback starts.
+//
+// After the first painted frame: window.__READY__ = true.
+// window.__EXPORT_PNG__({trim, padding}) → dataURL (alpha-bbox trim + pad).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Colors (inlined from lib/colors.tsx) ────────────────────────────────────
+const colors = {
+  brand:               '#65D9EE',
+  backgroundPrimary:   '#FAFAF8',
+  backgroundTertiary:  '#C7BDB2',
+  accentBrown:         '#AD5913',
+  accentOrange:        '#FF7C0F',
+  accentYellow:        '#FEDE59',
+  hardLightBlue:       '#3B89A8',
+  introDotBlue:        '#0A99C3',
+  introDotBrown:       '#FEDE59',
+}
+
+// ─── Constants (from TusiAnimation.tsx) ──────────────────────────────────────
+const MOBILE_BLEED_MAX_W = 768
+const CIRCLE_COLOR       = colors.backgroundTertiary
+const DOT_COLORS         = [colors.brand, colors.accentOrange, colors.accentYellow, colors.accentBrown]
+const DOT_COLOR_FALLBACK = colors.backgroundTertiary
+
+function dotColor(i) {
+  return i < DOT_COLORS.length ? DOT_COLORS[i] : DOT_COLOR_FALLBACK
+}
+
+// Deterministic pseudo-random in [0,1) from an integer seed.
+function hashRand(seed) {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453
+  return x - Math.floor(x)
+}
+
+// Mix two #rrggbb colors by t∈[0,1]; returns an rgb() string.
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16)
+  const ar = (pa >> 16) & 255, ag = (pa >> 8) & 255, ab = pa & 255
+  const br = (pb >> 16) & 255, bg = (pb >> 8) & 255, bb = pb & 255
+  const m  = (x, y) => Math.round(x + (y - x) * t)
+  return `rgb(${m(ar, br)},${m(ag, bg)},${m(ab, bb)})`
+}
+
+// ─── Studio settings + presets (from AnimationStudio.tsx) ────────────────────
+const HERO_OVERLAY = {
+  colors:      [colors.hardLightBlue, colors.accentOrange],
+  blendMode:   'hard-light',
+  sizeMul:     2.7,
+  trailFrames: 100,
+  fadeVh:      0.25,
+  minShrink:   1,
+}
+const HERO_BASE_FADE = {
+  colors: [colors.introDotBlue, colors.introDotBrown],
+  fadeVh: 0.6,
+  // shift is scroll/DOM-driven on the website; inert here (shiftMix stays 0).
+  shift: { selector: '#model', colors: [null, colors.accentYellow, colors.accentOrange] },
+}
+const RING_DOT_PALETTE = [colors.brand, colors.accentOrange, colors.accentYellow, colors.accentBrown]
+
+const DEFAULTS = {
+  numRails:        6,
+  showOuter:       false,
+  showInner:       true,
+  showRails:       false,
+  phase:           false,
+  overlap:         false,
+  tilt:            0,
+  rotation:        0,
+  draw:            100,
+  showConnections: false,
+  showCrown:       false,
+  dotSize:         10,
+  speed:           10,
+  trailSize:       0,
+  circleSize:      50,
+  xOffset:         0,
+  meridians:       0,
+  meridianSpread:  360,
+  meridianDraw:    100,
+  spinRings:       false,
+  orbit:           false,
+  multiplyDots:    false,
+  heroOverlay:     false,
+}
+
+const PRESETS = {
+  'home': { ...DEFAULTS,
+    numRails: 2, showOuter: true, showInner: true, showRails: true, phase: false, overlap: true,
+    tilt: 85, rotation: 0, draw: 0, showConnections: false, showCrown: false,
+    dotSize: 24, speed: 15, trailSize: 20, circleSize: 60,
+    meridians: 8, meridianSpread: 360, meridianDraw: 100, spinRings: true, orbit: false,
+    multiplyDots: true, heroOverlay: true },
+  'what-we-do': { ...DEFAULTS,
+    numRails: 2, showOuter: true, showInner: true, showRails: true, phase: false, overlap: false,
+    tilt: 0, rotation: 90, draw: 100, showConnections: true, showCrown: false,
+    dotSize: 20, speed: 24, trailSize: 0, circleSize: 40,
+    meridians: 8, meridianSpread: 0, meridianDraw: 100, spinRings: true, orbit: false, multiplyDots: true },
+  'model': { ...DEFAULTS,
+    numRails: 20, showOuter: true, showInner: false, showRails: true, phase: true, overlap: false,
+    tilt: 0, rotation: 0, draw: 100, showConnections: true, showCrown: true,
+    dotSize: 20, speed: 6, trailSize: 0, circleSize: 60,
+    meridians: 0, spinRings: false, orbit: false, multiplyDots: true },
+  'partners': { ...DEFAULTS,
+    numRails: 6, showOuter: false, showInner: true, showRails: false, phase: false, overlap: false,
+    tilt: 0, rotation: 0, draw: 100, showConnections: false, showCrown: false,
+    dotSize: 20, speed: 6, trailSize: 0, circleSize: 50,
+    meridians: 0, spinRings: false, orbit: false, multiplyDots: true },
+  'orbit': { ...DEFAULTS,
+    numRails: 8, showOuter: true, showInner: false, showRails: false, overlap: true,
+    tilt: 85, draw: 0, dotSize: 24, speed: 20, trailSize: 0, circleSize: 40,
+    meridians: 8, meridianSpread: 360, meridianDraw: 100, spinRings: true, orbit: true },
+}
+
+// ─── URL params → resolved component props ────────────────────────────────────
+const q = Object.fromEntries(new URLSearchParams(location.search))
+let userParams = {}
+if (q.params) {
+  try { userParams = JSON.parse(q.params) }
+  catch (e) { console.error('Bad ?params JSON:', e.message) }
+}
+const presetSettings = q.preset ? PRESETS[q.preset] : null
+if (q.preset && !presetSettings) console.error(`Unknown preset "${q.preset}". Valid: ${Object.keys(PRESETS).join(', ')}`)
+
+// 1. Studio-level settings: DEFAULTS ← preset ← user params (settings keys only)
+const settings = { ...DEFAULTS, ...(presetSettings || {}) }
+for (const k of Object.keys(DEFAULTS)) if (k in userParams) settings[k] = userParams[k]
+
+// 2. Derive component props exactly like AnimationStudio does.
+const ringCount = settings.orbit ? settings.numRails : settings.meridians
+const P = {
+  // direct from settings
+  numRails:        settings.numRails,
+  showOuter:       settings.showOuter,
+  showInner:       settings.showInner,
+  showRails:       settings.showRails,
+  phase:           settings.phase,
+  overlap:         settings.overlap,
+  tilt:            settings.tilt,
+  rotation:        settings.rotation,
+  draw:            settings.draw,
+  showConnections: settings.showConnections,
+  showCrown:       settings.showCrown,
+  dotSize:         settings.dotSize,
+  speed:           settings.speed,
+  trailSize:       settings.trailSize,
+  circleSize:      settings.circleSize,
+  xOffset:         settings.xOffset,
+  meridians:       ringCount,
+  meridianSpread:  settings.meridianSpread,
+  meridianDraw:    settings.meridianDraw,
+  spinRings:       settings.spinRings,
+  // ring-dot (orbit) derivation
+  ringDots:        settings.orbit,
+  ringDotColors:   settings.orbit
+    ? Array.from({ length: settings.numRails }, (_, i) => RING_DOT_PALETTE[i % RING_DOT_PALETTE.length])
+    : null,
+  ringSpinScale:   settings.speed / 20,
+  showIntersections: false,   // the studio always passes false
+  // blend / hero derivation
+  dotBlendMode:    settings.multiplyDots ? 'multiply' : 'source-over',
+  background:      (settings.heroOverlay || settings.multiplyDots) ? colors.backgroundPrimary : null,
+  overlayDots:     settings.heroOverlay ? HERO_OVERLAY : null,
+  baseColorFade:   settings.heroOverlay ? HERO_BASE_FADE : null,
+  // full TusiAnimation prop surface (component defaults)
+  pan:             0,
+  restTilt:        0,
+  restPan:         0,
+  crownDensity:    20,
+  uniformSpin:     false,
+  peelRings:       false,
+  ringSeed:        0,
+  solidRings:      false,
+  ringOrbit:       0,
+  activeRing:      -1,
+  spinDriver:      0,
+  flatHalo:        0,
+  ringDotScales:   null,
+  uniformDots:     false,
+  dotScale:        1,
+  dotStagger:      0,
+  railSpacing:     0,
+  clampXOffset:    true,
+  yOffset:         0,
+  restPhase:       0,
+  settle:          false,
+  circleColor:     CIRCLE_COLOR,
+  dotColors:       null,
+  dotScales:       null,
+}
+
+// 3. Raw component-prop overrides: any userParams key that names a component
+//    prop is applied directly (wins over derivation), so custom params can use
+//    the full TusiAnimation surface (pan, dotStagger, ringSeed, solidRings, …).
+const SETTINGS_ONLY = new Set(['orbit', 'multiplyDots', 'heroOverlay'])
+for (const k of Object.keys(userParams)) {
+  if (k in P && !SETTINGS_ONLY.has(k)) P[k] = userParams[k]
+}
+
+// 4. ?background wins over everything ('transparent' → no canvas paint).
+if (q.background !== undefined) {
+  P.background = q.background === 'transparent' ? null : q.background
+}
+
+// ─── Canvas sizing ────────────────────────────────────────────────────────────
+const canvas = document.getElementById('tusi')
+const ctx    = canvas.getContext('2d')
+const W = window.innerWidth
+const H = window.innerHeight
+const size = q.size ? Number(q.size) : 2000
+const dpr  = q.dpr ? Number(q.dpr) : Math.max(1, size / Math.max(W, H))
+canvas.width  = Math.round(W * dpr)
+canvas.height = Math.round(H * dpr)
+
+// ─── Animation state (mirrors the component's closure state) ─────────────────
+const TAU = Math.PI * 2
+const RAIL_SPEED = 6
+
+// Seed every progress from its target so the first frame matches the params.
+let overlapProgress     = P.overlap         ? 1 : 0
+let phaseProgress       = P.phase           ? 1 : 0
+let outerProgress       = P.showOuter       ? 1 : 0
+let innerProgress       = P.showInner       ? 1 : 0
+let railsProgress       = P.showRails       ? 1 : 0
+let connectionsProgress = P.showConnections ? 1 : 0
+let crownProgress       = P.showCrown       ? 1 : 0
+let drawProgress        = P.draw / 100
+let lastT = 0
+
+let dotProgress  = 1
+let prevDotState = '0-0'
+let frozenDots          = []
+let lastDots            = []
+let trailHistory        = []
+let ringDotTrailHistory = []
+let centerTrailHistory  = []
+let overlayTrailHistory = []
+
+let phi            = 0
+let ringSpin       = 0
+let prevSpinDriver = null
+let rails          = []
+let prevN          = -1
+let prevUsePhase   = false
+let prevSpacing    = -1
+let overlayGate    = 1
+let ringFlatten    = []   // per-ring eased highlight amount (emph)
+let dotHoverScale  = []   // per-rail eased hover-size multipliers
+
+// Animated current values — lerped toward targets each frame (params are
+// static here, so these start settled; kept for fidelity of the loop).
+const A = {
+  tilt:       P.tilt,
+  rotation:   P.rotation,
+  pan:        P.pan,
+  dotSize:    P.dotSize,
+  dotScale:   P.dotScale,
+  speed:      P.speed,
+  trailSize:  P.trailSize,
+  circleSize: P.circleSize,
+  xOffset:    P.xOffset,
+  yOffset:    P.yOffset,
+}
+
+function easeInOut(x) {
+  return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2
+}
+function lerp(a, b, t) { return a + (b - a) * t }
+
+// Static harness: no scroll. baseColorMix stays at the scrollY=0 resting value
+// (0 with a baseColorFade → intro colours, matching the studio's resting hero).
+let baseColorMix = 1
+let shiftMix = 0
+function colorFor(i) {
+  const override = P.dotColors
+  if (override) return override[i] ?? DOT_COLOR_FALLBACK
+  const def = dotColor(i)
+  const bcf = P.baseColorFade
+  let c = def
+  if (bcf && baseColorMix < 1) {
+    const intro = bcf.colors[i] ?? def
+    c = baseColorMix <= 0 ? intro : mixHex(intro, def, baseColorMix)
+  }
+  const shiftTo = bcf && bcf.shift ? bcf.shift.colors[i] : null
+  if (shiftTo && shiftMix > 0) {
+    c = shiftMix >= 1 ? shiftTo : mixHex(c, shiftTo, shiftMix)
+  }
+  return c
+}
+
+// ─── The draw loop (faithful port of TusiAnimation's draw()) ─────────────────
+function drawFrame(timestamp) {
+  const t     = timestamp / 1000
+  const delta = lastT === 0 ? 0 : Math.min(t - lastT, 0.1)
+  lastT = t
+
+  const n             = P.numRails
+  const usePhase      = P.phase
+  const overlapTarget = P.overlap ? 1 : 0
+  const phaseTarget   = usePhase ? 1 : 0
+  const outerTarget        = P.showOuter       ? 1 : 0
+  const innerTarget        = P.showInner       ? 1 : 0
+  const railsTarget        = P.showRails       ? 1 : 0
+  const connectionsTarget  = P.showConnections ? 1 : 0
+  const crownTarget        = P.showCrown       ? 1 : 0
+
+  // Lerp numeric values toward their targets
+  const numericLerp = Math.min(1, delta * 6)
+  A.tilt       = lerp(A.tilt,       P.tilt,       numericLerp)
+  A.rotation   = lerp(A.rotation,   P.rotation,   numericLerp)
+  A.pan        = lerp(A.pan,        P.pan,        numericLerp)
+  A.dotSize    = lerp(A.dotSize,    P.dotSize,    numericLerp)
+  A.dotScale   = lerp(A.dotScale,   P.dotScale,   numericLerp)
+  {
+    const targets = P.dotScales
+    const cur = dotHoverScale
+    const hoverLerp = Math.min(1, delta * 12)
+    const count = Math.max(cur.length, targets ? targets.length : 0)
+    for (let i = 0; i < count; i++) {
+      cur[i] = lerp(cur[i] ?? 1, (targets && targets[i]) ?? 1, hoverLerp)
+    }
+  }
+  A.speed      = lerp(A.speed,      P.speed,      numericLerp)
+  A.trailSize  = lerp(A.trailSize,  P.trailSize,  numericLerp)
+  A.circleSize = lerp(A.circleSize, P.circleSize, numericLerp)
+  A.xOffset    = lerp(A.xOffset,    P.xOffset,    numericLerp)
+  A.yOffset    = lerp(A.yOffset,    P.yOffset,    numericLerp)
+
+  const maxTrail = Math.round(A.trailSize)
+  const omega    = A.speed / 50
+
+  // settle → ease phase toward restPhase; otherwise free-spin.
+  if (P.settle) {
+    const restRad = (P.restPhase * Math.PI) / 180
+    const rest = Math.round((phi - restRad) / TAU) * TAU + restRad
+    phi = lerp(phi, rest, Math.min(1, delta * 6))
+  } else {
+    phi += omega * delta
+  }
+
+  // Rail spacing: full circle (2π/n) off-phase, half (π/n) rolling;
+  // railSpacing (degrees) overrides.
+  const spacing = P.railSpacing > 0
+    ? (P.railSpacing * Math.PI) / 180
+    : (usePhase ? Math.PI / n : TAU / n)
+
+  if (n !== prevN) {
+    const active = rails.filter(r => !r.dying)
+    const keep   = Math.min(active.length, n)
+    const newActive = []
+    for (let i = 0; i < keep; i++) {
+      newActive.push({ ...active[i], targetAngle: -i * spacing, dying: false, targetAlpha: 1, colorIndex: i })
+    }
+    const firstBuild = prevN === -1
+    for (let i = keep; i < n; i++) {
+      const target = -i * spacing
+      const stagTarget = -i * (P.dotStagger * Math.PI) / 180
+      newActive.push({ angle: firstBuild ? target : 0, targetAngle: target, alpha: 0, targetAlpha: 1, dying: false, colorIndex: i, stagger: firstBuild ? stagTarget : 0 })
+    }
+    const stillDying = rails.filter(r => r.dying)
+    for (let i = n; i < active.length; i++) {
+      stillDying.push({ ...active[i], targetAlpha: 0, dying: true })
+    }
+    rails        = [...newActive, ...stillDying]
+    prevN        = n
+    prevUsePhase = usePhase
+    trailHistory       = []
+    centerTrailHistory = []
+    frozenDots         = []
+    dotProgress        = 1
+  } else if (usePhase !== prevUsePhase || spacing !== prevSpacing) {
+    rails.filter(r => !r.dying).forEach((rail, i) => {
+      rail.targetAngle = -i * spacing
+    })
+    prevUsePhase = usePhase
+  }
+  prevSpacing = spacing
+
+  // Animate rails
+  const STAG_SPEED = 2
+  const stagRad = (P.dotStagger * Math.PI) / 180
+  for (let i = 0; i < rails.length; i++) {
+    const rail = rails[i]
+    let diff = rail.targetAngle - rail.angle
+    diff -= TAU * Math.round(diff / TAU)
+    rail.angle += diff * Math.min(1, delta * RAIL_SPEED)
+    let sdiff = (-i * stagRad) - rail.stagger
+    sdiff -= TAU * Math.round(sdiff / TAU)
+    rail.stagger += sdiff * Math.min(1, delta * STAG_SPEED)
+    rail.alpha = rail.targetAlpha > rail.alpha
+      ? Math.min(rail.targetAlpha, rail.alpha + delta * RAIL_SPEED)
+      : Math.max(rail.targetAlpha, rail.alpha - delta * RAIL_SPEED)
+  }
+  rails = rails.filter(r => !(r.dying && r.alpha < 0.005))
+
+  // Animate shared progress values
+  const advance = (v, target) =>
+    target > v ? Math.min(target, v + delta * 4) : Math.max(target, v - delta * 4)
+
+  overlapProgress     = advance(overlapProgress,     overlapTarget)
+  phaseProgress       = advance(phaseProgress,       phaseTarget)
+  outerProgress       = advance(outerProgress,       outerTarget)
+  innerProgress       = advance(innerProgress,       innerTarget)
+  railsProgress       = advance(railsProgress,       railsTarget)
+  connectionsProgress = advance(connectionsProgress, connectionsTarget)
+  crownProgress = crownTarget > crownProgress
+    ? Math.min(crownTarget, crownProgress + delta * 2)
+    : Math.max(crownTarget, crownProgress - delta * 2)
+  const drawTarget = P.draw / 100
+  drawProgress = drawTarget > drawProgress
+    ? Math.min(drawTarget, drawProgress + delta * 2)
+    : Math.max(drawTarget, drawProgress - delta * 2)
+
+  const p            = easeInOut(overlapProgress)
+  const phaseP       = easeInOut(phaseProgress)
+  const outerP       = easeInOut(outerProgress)
+  const innerP       = easeInOut(innerProgress)
+  const railsP       = easeInOut(railsProgress)
+  const connectionsP = easeInOut(connectionsProgress)
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, W, H)
+
+  // No scroll in the harness: outro = 0, baseColorMix at its scrollY=0 value.
+  const bgColor = P.background
+  const outro   = 0
+  baseColorMix  = P.baseColorFade ? 0 : 1
+  shiftMix      = 0
+  const circleColor = P.circleColor
+
+  if (bgColor) {
+    ctx.fillStyle = bgColor
+    ctx.fillRect(0, 0, W, H)
+  }
+
+  const introRise = W < MOBILE_BLEED_MAX_W ? 0.05 * H * (1 - outro) : 0
+  const cy = H / 2 - (A.yOffset / 100) * H - introRise
+  const R  = Math.min(W, H) * (A.circleSize / 100)
+
+  const reqOffset = A.xOffset
+  const rightBleedMobile = W < MOBILE_BLEED_MAX_W && reqOffset > 0
+  const clampPad  = rightBleedMobile ? 0.1 : 0.6
+  const maxOffset = P.clampXOffset ? Math.max(0, W / 2 - R * clampPad) : Infinity
+  const cx        = W / 2 + Math.sign(reqOffset) * Math.min(Math.abs(reqOffset), maxOffset)
+
+  // Z-axis rotation as a canvas transform
+  const rotZrad = (A.rotation * Math.PI) / 180
+  if (rotZrad !== 0) {
+    ctx.translate(cx, cy)
+    ctx.rotate(rotZrad)
+    ctx.translate(-cx, -cy)
+  }
+
+  const focal   = Math.min(W, H) * 1.5
+  const tiltRad = (A.tilt * Math.PI) / 180
+  const panRad  = (A.pan * Math.PI) / 180
+  const dotR    = A.dotSize / 2
+
+  const cosTilt = Math.cos(tiltRad), sinTilt = Math.sin(tiltRad)
+  const cosPan  = Math.cos(panRad),  sinPan  = Math.sin(panRad)
+  const noRot   = tiltRad === 0 && panRad === 0
+
+  function project(x, y) {
+    if (noRot) return [x, y]
+    const dx = x - cx, dy = y - cy
+    const yT = dy * cosTilt
+    const zT = dy * sinTilt
+    const x2 =  dx * cosPan + zT * sinPan
+    const z2 = -dx * sinPan + zT * cosPan
+    const s  = focal / Math.max(1, focal - z2)
+    return [cx + x2 * s, cy + yT * s]
+  }
+  function pscale(x, y) {
+    if (noRot) return 1
+    const dx = x - cx, dy = y - cy
+    const z2 = -dx * sinPan + dy * sinTilt * cosPan
+    return focal / Math.max(1, focal - z2)
+  }
+  function strokeCircle(x0, y0, r, startAngle = 0, segs = 80) {
+    const endSeg = Math.round(segs * drawProgress)
+    if (endSeg < 1) return
+    ctx.beginPath()
+    for (let j = 0; j <= endSeg; j++) {
+      const a = startAngle + (j / segs) * TAU
+      const [px, py] = project(x0 + r * Math.cos(a), y0 + r * Math.sin(a))
+      j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
+    }
+    if (drawProgress >= 1) ctx.closePath()
+    ctx.stroke()
+  }
+  function projMeridian(phiX, phiY, r, theta, camTilt, pan, spin, offX = 0, offY = 0, globe = false) {
+    const ox = r * Math.cos(theta)
+    const oy = r * Math.sin(theta)
+    const x0 =  ox * Math.cos(phiY)
+    const z0 = -ox * Math.sin(phiY)
+    const cphi = Math.cos(phiX), sphi = Math.sin(phiX)
+    const y1 = oy * cphi - z0 * sphi
+    const z1 = oy * sphi + z0 * cphi
+    const cs = Math.cos(spin), ss = Math.sin(spin)
+    let x2, y2, zSpin
+    if (globe) {
+      x2    =  x0 * cs + z1 * ss
+      zSpin = -x0 * ss + z1 * cs
+      y2    =  y1
+    } else {
+      x2    = x0 * cs - y1 * ss
+      y2    = x0 * ss + y1 * cs
+      zSpin = z1
+    }
+    const ct = Math.cos(camTilt), st = Math.sin(camTilt)
+    const y3 = y2 * ct - zSpin * st
+    const z3 = y2 * st + zSpin * ct
+    const cp = Math.cos(pan), sp = Math.sin(pan)
+    const x4 =  x2 * cp + z3 * sp
+    const z4 = -x2 * sp + z3 * cp
+    const s  = focal / Math.max(1, focal - z4)
+    return [cx + offX + x4 * s, cy + offY + y3 * s]
+  }
+  function strokeMeridian(phiX, phiY, camTilt, pan, spin, segs = 80, offX = 0, offY = 0, globe = false) {
+    ctx.beginPath()
+    for (let j = 0; j <= segs; j++) {
+      const [px, py] = projMeridian(phiX, phiY, R, (j / segs) * TAU, camTilt, pan, spin, offX, offY, globe)
+      j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    ctx.stroke()
+  }
+  function strokeLine(x1, y1, x2, y2) {
+    if (drawProgress <= 0) return
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2
+    const ex1 = mx + (x1 - mx) * drawProgress
+    const ey1 = my + (y1 - my) * drawProgress
+    const ex2 = mx + (x2 - mx) * drawProgress
+    const ey2 = my + (y2 - my) * drawProgress
+    const [px1, py1] = project(ex1, ey1)
+    const [px2, py2] = project(ex2, ey2)
+    ctx.beginPath()
+    ctx.moveTo(px1, py1); ctx.lineTo(px2, py2)
+    ctx.stroke()
+  }
+  function fillDot(x, y, color, sizeFactor = 1) {
+    const r = dotR * sizeFactor * (P.uniformDots ? 1 : pscale(x, y))
+    if (r <= 0) return
+    const [px, py] = project(x, y)
+    ctx.beginPath()
+    ctx.arc(px, py, r, 0, TAU)
+    ctx.fillStyle = color
+    ctx.fill()
+  }
+
+  // ── Circles ───────────────────────────────────────────────────────────────
+  ctx.strokeStyle = circleColor
+  ctx.lineWidth   = 0.5
+
+  const numMeridians = Math.round(P.meridians)
+
+  if (outerP > 0.005 && numMeridians <= 1) {
+    ctx.globalAlpha = outerP
+    strokeCircle(cx, cy, R)
+    ctx.globalAlpha = 1
+  }
+
+  // ── Wireframe sphere meridians ────────────────────────────────────────────
+  if (numMeridians > 1 && outerP > 0.005) {
+    const REST_SPREAD = 360
+    const FULL_RAD    = (REST_SPREAD * Math.PI) / 180
+    const mp          = Math.max(0, Math.min(1, P.meridianDraw / 100))
+    const numExtra    = numMeridians - 1
+    const S           = 0.6
+
+    const convT  = Math.max(0, Math.min(1,
+      (P.meridianSpread / REST_SPREAD - 0.4) / 0.6))
+    const formed = mp * mp * (3 - 2 * mp)
+    const settle = convT * formed
+    const rotF   = Math.max(0, Math.min(1, (convT - 0.5) / 0.5))
+    const alphaF = Math.max(0, Math.min(1, convT / 0.5))
+
+    if (P.spinRings && P.uniformSpin) {
+      ringSpin += 0.11 * settle * delta
+      const sd = P.spinDriver
+      if (prevSpinDriver !== null) ringSpin += 0.9 * (sd - prevSpinDriver) * settle
+      prevSpinDriver = sd
+      const flat = 1 - formed
+      if (flat > 0.02) {
+        const nearest = Math.round(ringSpin / TAU) * TAU
+        ringSpin += (nearest - ringSpin) * Math.min(1, delta * 5 * flat)
+      }
+    }
+
+    const tiltDeltaRad = ((A.tilt - P.restTilt) * Math.PI) / 180
+    const panDeltaRad  = ((A.pan  - P.restPan)  * Math.PI) / 180
+    const PACE_AMP     = 0.9
+
+    const rings = []
+    const ringDotsOn = P.ringDots
+    const activeRing = P.activeRing ?? -1
+    const emph = ringFlatten
+    const HILITE_EASE = 1.8
+    for (let k = 0; k < numMeridians; k++) {
+      const tgt = activeRing < 0 ? 1 : k === activeRing ? 1 : 0
+      emph[k] = (emph[k] ?? 1) + (tgt - (emph[k] ?? 1)) * Math.min(1, delta * HILITE_EASE)
+    }
+    for (let k = 0; k < numMeridians; k++) {
+      let phiX = 0, phiY = 0, vis = 1, pace = 1, spin = 0
+      if (k > 0 || ringDotsOn) {
+        const seed = Math.round(P.ringSeed)
+        const fX = hashRand(k * 2     + seed * 31) * FULL_RAD
+        const fY = hashRand(k * 2 + 1 + seed * 31) * FULL_RAD
+        if (ringDotsOn) {
+          const GLOBE_OPEN = (100 * Math.PI) / 180
+          const gX = (hashRand(k * 2     + seed * 31) * 2 - 1) * GLOBE_OPEN
+          const gY = (hashRand(k * 2 + 1 + seed * 31) * 2 - 1) * GLOBE_OPEN
+          phiX = gX * formed
+          phiY = gY * formed
+          vis  = alphaF
+        } else if (P.peelRings) {
+          const GROUP_PHASE = 0.12
+          const PEEL_DUR    = 0.22
+          const GROUP_LEAN  = (24 * Math.PI) / 180
+          const peelSpan = Math.max(1e-3, 1 - GROUP_PHASE - PEEL_DUR)
+          const step     = numExtra > 1 ? peelSpan / (numExtra - 1) : 0
+          const gLean    = GROUP_LEAN * formed
+          const relStart = GROUP_PHASE + (k - 1) * step
+          const peel     = Math.max(0, Math.min(1, (formed - relStart) / PEEL_DUR))
+          const peelE    = peel * peel * (3 - 2 * peel)
+          phiX = gLean * (1 - peelE) + fX * peelE
+          phiY = 0     * (1 - peelE) + fY * peelE
+          vis  = alphaF
+        } else {
+          const start = ((k - 1) / numExtra) * S
+          const local = Math.max(0, Math.min(1, (mp - start) / (1 - S)))
+          const eIn   = local * local * (3 - 2 * local)
+          const rot   = eIn * rotF
+          vis  = eIn * alphaF
+          phiX = fX * rot
+          phiY = fY * rot
+        }
+        pace = P.uniformSpin ? 1 : 1 + PACE_AMP * (hashRand(k * 9 + 5) * 2 - 1)
+        if (P.spinRings) {
+          if (P.uniformSpin) {
+            spin = ringSpin
+          } else {
+            const nuance = 0.85 + 0.3 * hashRand(k * 11 + 7)
+            spin = t * 0.15 * nuance * settle * P.ringSpinScale
+          }
+        }
+      }
+      const mTilt = tiltRad + (pace - 1) * tiltDeltaRad * settle
+      const mPan  = panRad  + (pace - 1) * panDeltaRad  * settle
+      rings.push({ phiX, phiY, vis, spin, mTilt, mPan })
+    }
+
+    // Ring-dot "rose" offset
+    const orbitR = ringDotsOn ? P.ringOrbit * Math.min(W, H) * 0.18 : 0
+    const roseSpin = t * 0.07
+    const ringOffX = (k) =>
+      orbitR === 0 ? 0 : orbitR * Math.cos((k / numMeridians) * TAU - Math.PI / 2 + roseSpin)
+    const ringOffY = (k) =>
+      orbitR === 0 ? 0 : orbitR * Math.sin((k / numMeridians) * TAU - Math.PI / 2 + roseSpin)
+
+    const outlineThin = !ringDotsOn && W < 768 ? 0.7 : 1
+    if (!ringDotsOn) {
+      const r0 = rings[0]
+      const solidify = 1 - convT
+      ctx.globalAlpha = outerP
+      ctx.lineWidth   = (0.8 + (0.5 - 0.8) * solidify) * outlineThin
+      if (solidify >= 0.999) {
+        ctx.setLineDash([])
+        ctx.lineCap = 'butt'
+      } else {
+        ctx.lineCap = 'round'
+        ctx.setLineDash([2, 4 * (1 - solidify)])
+      }
+      strokeMeridian(r0.phiX, r0.phiY, r0.mTilt, r0.mPan, r0.spin)
+    }
+
+    if (P.solidRings) {
+      ctx.lineCap = 'butt'
+      ctx.setLineDash([])
+    } else {
+      ctx.lineCap   = 'round'
+      ctx.setLineDash([2, 4])
+    }
+    const globe = ringDotsOn
+    const ringDotHighlight = ringDotsOn && activeRing >= 0
+    const extraVis = Math.max(formed, P.ringOrbit)
+    for (let k = ringDotsOn ? 0 : 1; k < numMeridians; k++) {
+      const rg = rings[k]
+      if (rg.vis <= 0.001) continue
+      const e = ringDotsOn ? (emph[k] ?? 1) : 1
+      const strokeVis = ringDotsOn && k > 0 ? rg.vis * extraVis : rg.vis
+      if (strokeVis <= 0.001) continue
+      const baseAlpha = outerP * strokeVis
+      if (ringDotHighlight) {
+        if (e > 0.002) {
+          ctx.setLineDash([])
+          ctx.lineCap   = 'butt'
+          ctx.globalAlpha = baseAlpha * e
+          ctx.lineWidth = 0.8
+          strokeMeridian(rg.phiX, rg.phiY, rg.mTilt, rg.mPan, rg.spin, 80, ringOffX(k), ringOffY(k), globe)
+        }
+        const de = 1 - e
+        if (de > 0.002) {
+          ctx.setLineDash([0.5, 5])
+          ctx.lineCap   = 'round'
+          ctx.globalAlpha = baseAlpha * de
+          ctx.lineWidth = 0.8
+          strokeMeridian(rg.phiX, rg.phiY, rg.mTilt, rg.mPan, rg.spin, 80, ringOffX(k), ringOffY(k), globe)
+        }
+      } else {
+        ctx.globalAlpha = baseAlpha * (0.14 + 0.86 * e)
+        ctx.lineWidth = (0.8 + 0.5 * e) * outlineThin
+        strokeMeridian(rg.phiX, rg.phiY, rg.mTilt, rg.mPan, rg.spin, 80, ringOffX(k), ringOffY(k), globe)
+      }
+    }
+    ctx.setLineDash([])
+    ctx.lineCap   = 'butt'
+    ctx.lineWidth = 0.5
+    ctx.globalAlpha = 1
+
+    // ── Ring-anchored dots ────────────────────────────────────────────────
+    if (ringDotsOn) {
+      const rdColors = P.ringDotColors
+      const rdScales = P.ringDotScales
+      const positions = []
+      ctx.globalCompositeOperation = P.dotBlendMode
+      if (maxTrail > 0 && ringDotTrailHistory.length > 1) {
+        const total = ringDotTrailHistory.length
+        for (let f = 0; f < total - 1; f++) {
+          const age = (total - 1 - f) / total
+          const a   = Math.pow(1 - age, 2) * 0.9
+          const frame = ringDotTrailHistory[f]
+          for (let k = 0; k < frame.length && k < numMeridians; k++) {
+            const rg = rings[k]
+            if (!rg || rg.vis <= 0.001) continue
+            const e = emph[k] ?? 1
+            const r = dotR * ((rdScales && rdScales[k]) ?? 1)
+            if (r <= 0) continue
+            ctx.globalAlpha = a * outerP * rg.vis * e * e
+            ctx.beginPath()
+            ctx.arc(frame[k].x, frame[k].y, r, 0, TAU)
+            ctx.fillStyle = (rdColors && rdColors[k]) ?? DOT_COLOR_FALLBACK
+            ctx.fill()
+          }
+        }
+        ctx.globalAlpha = 1
+      }
+      for (let k = 0; k < numMeridians; k++) {
+        const rg = rings[k]
+        const theta = (k / numMeridians) * TAU
+        const [px, py] = projMeridian(rg.phiX, rg.phiY, R, theta, rg.mTilt, rg.mPan, rg.spin, ringOffX(k), ringOffY(k), true)
+        positions[k] = { x: px, y: py }
+        if (rg.vis <= 0.001) continue
+        const e = emph[k] ?? 1
+        const r = dotR * ((rdScales && rdScales[k]) ?? 1)
+        if (r <= 0) continue
+        ctx.globalAlpha = outerP * rg.vis * e * e
+        ctx.beginPath()
+        ctx.arc(px, py, r, 0, TAU)
+        ctx.fillStyle = (rdColors && rdColors[k]) ?? DOT_COLOR_FALLBACK
+        ctx.fill()
+      }
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = 1
+      if (maxTrail > 0) {
+        ringDotTrailHistory.push(positions.map((pt) => ({ x: pt.x, y: pt.y })))
+        if (ringDotTrailHistory.length > maxTrail) {
+          ringDotTrailHistory = ringDotTrailHistory.slice(ringDotTrailHistory.length - maxTrail)
+        }
+      } else {
+        ringDotTrailHistory = []
+      }
+    }
+
+    // ── Flat halo ──────────────────────────────────────────────────────────
+    const halo = P.flatHalo
+    if (ringDotsOn && halo > 0.001) {
+      ctx.save()
+      ctx.setLineDash([])
+      ctx.lineCap = 'butt'
+      ctx.strokeStyle = circleColor
+      ctx.lineWidth = 0.8
+      ctx.globalAlpha = outerP * halo
+      ctx.beginPath()
+      ctx.arc(cx, cy, R * 1.07, 0, TAU)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // ── Intersection dots ──────────────────────────────────────────────────
+    const dotsP = formed * alphaF
+    if (P.showIntersections && dotsP > 0.01) {
+      const normals = rings.map((rg) => {
+        const ax = rg.mTilt + rg.phiX
+        const a  = Math.sin(rg.phiY)
+        const b  = -Math.cos(rg.phiY) * Math.sin(ax)
+        const c  =  Math.cos(rg.phiY) * Math.cos(ax)
+        const cP = Math.cos(rg.mPan), sP = Math.sin(rg.mPan)
+        return [a * cP + c * sP, b, -a * sP + c * cP]
+      })
+      ctx.fillStyle = circleColor
+      const baseDot = 1.8
+      for (let i = 0; i < numMeridians; i++) {
+        for (let j = i + 1; j < numMeridians; j++) {
+          const ni = normals[i], nj = normals[j]
+          let dx = ni[1] * nj[2] - ni[2] * nj[1]
+          let dy = ni[2] * nj[0] - ni[0] * nj[2]
+          let dz = ni[0] * nj[1] - ni[1] * nj[0]
+          const len = Math.hypot(dx, dy, dz)
+          if (len < 1e-4) continue
+          dx /= len; dy /= len; dz /= len
+          for (let sgn = 1; sgn >= -1; sgn -= 2) {
+            const X = sgn * R * dx, Y = sgn * R * dy, Z = sgn * R * dz
+            const s = focal / Math.max(1, focal - Z)
+            ctx.globalAlpha = outerP * dotsP
+            ctx.beginPath()
+            ctx.arc(cx + X * s, cy + Y * s, baseDot * s, 0, TAU)
+            ctx.fill()
+          }
+        }
+      }
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // ── Crown ──────────────────────────────────────────────────────────────────
+  if (crownProgress > 0) {
+    const numCrown = n * Math.max(1, Math.round(P.crownDensity))
+    const S        = 0.5
+    ctx.strokeStyle = circleColor
+    ctx.lineWidth   = 0.5
+    for (let i = 0; i < numCrown; i++) {
+      const theta = (i / numCrown) * TAU
+      let localP
+      if (crownTarget === 1) {
+        const start = (i / numCrown) * S
+        localP = Math.max(0, Math.min(1, (crownProgress - start) / (1 - S)))
+      } else {
+        const reverseI = numCrown - 1 - i
+        const start    = (reverseI / numCrown) * S
+        const eraseP   = 1 - crownProgress
+        localP = 1 - Math.max(0, Math.min(1, (eraseP - start) / (1 - S)))
+      }
+      if (localP <= 0) continue
+      const [px1, py1] = project(cx + R * Math.cos(theta), cy + R * Math.sin(theta))
+      const [px2, py2] = project(
+        cx + R * (1 + 0.1 * localP) * Math.cos(theta),
+        cy + R * (1 + 0.1 * localP) * Math.sin(theta),
+      )
+      ctx.globalAlpha = localP
+      ctx.beginPath()
+      ctx.moveTo(px1, py1)
+      ctx.lineTo(px2, py2)
+      ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // Overlap fade factor — shared by rails and inner circles
+  const innerAlpha = Math.max(0, 1 - p / 0.6)
+
+  // Diameter lines
+  if (railsP > 0.005 && innerAlpha > 0) {
+    for (const rail of rails) {
+      const a = railsP * innerAlpha * rail.alpha
+      if (a < 0.005) continue
+      ctx.globalAlpha = a
+      strokeLine(cx + R * Math.cos(rail.angle), cy + R * Math.sin(rail.angle),
+                 cx - R * Math.cos(rail.angle), cy - R * Math.sin(rail.angle))
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // Inner rolling circles
+  if (innerP > 0.005 && innerAlpha > 0) {
+    const innerR = lerp(R / 2, R, p)
+    for (const rail of rails) {
+      const a = innerP * innerAlpha * (1 - phaseP) * rail.alpha
+      if (a < 0.005) continue
+      ctx.globalAlpha = a
+      const icx0 = cx + (R / 2) * Math.cos(phi + rail.stagger + rail.angle)
+      const icy0 = cy + (R / 2) * Math.sin(phi + rail.stagger + rail.angle)
+      const icxD = lerp(icx0, cx, p)
+      const icyD = lerp(icy0, cy, p)
+      strokeCircle(icxD, icyD, innerR, Math.atan2(cy - icyD, cx - icxD))
+    }
+    const rollAlpha = innerP * innerAlpha * phaseP
+    if (rollAlpha > 0.005) {
+      ctx.globalAlpha = rollAlpha
+      const icx0 = cx + (R / 2) * Math.cos(-phi)
+      const icy0 = cy + (R / 2) * Math.sin(-phi)
+      const icxD = lerp(icx0, cx, p)
+      const icyD = lerp(icy0, cy, p)
+      strokeCircle(icxD, icyD, innerR, Math.atan2(cy - icyD, cx - icxD))
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // ── Dots ───────────────────────────────────────────────────────────────────
+  const dotState = `${overlapTarget}-${phaseTarget}`
+  if (dotState !== prevDotState) {
+    frozenDots   = lastDots.length === rails.length ? [...lastDots] : []
+    dotProgress  = 0
+    prevDotState = dotState
+    trailHistory = []
+  }
+  dotProgress = Math.min(1, dotProgress + delta * 4)
+  const dotP  = easeInOut(dotProgress)
+
+  const newDots = []
+  for (let i = 0; i < rails.length; i++) {
+    const rail  = rails[i]
+    const theta = rail.angle
+    const phase = usePhase ? theta : 0
+    const stag  = rail.stagger
+    let tx, ty
+    if (overlapTarget === 1) {
+      tx = cx + R * Math.cos(phi + stag + theta)
+      ty = cy + R * Math.sin(phi + stag + theta)
+    } else {
+      tx = cx + R * Math.cos(phi + stag + phase) * Math.cos(theta)
+      ty = cy + R * Math.cos(phi + stag + phase) * Math.sin(theta)
+    }
+    let x, y
+    if (dotProgress >= 1 || frozenDots.length !== rails.length) {
+      x = tx; y = ty
+    } else {
+      x = lerp(frozenDots[i].x, tx, dotP)
+      y = lerp(frozenDots[i].y, ty, dotP)
+    }
+    newDots.push({ x, y })
+  }
+
+  // ── Connections ────────────────────────────────────────────────────────────
+  const connLineAlpha = connectionsP * (1 - phaseP)
+  if (connectionsP > 0.005) {
+    ctx.strokeStyle = circleColor
+    ctx.lineWidth   = 0.5
+    ctx.globalAlpha = connectionsP
+    strokeCircle(cx, cy, (R / 2) * (1 + 0.5 * phaseP), 0)
+    ctx.globalAlpha = 1
+    if (connLineAlpha > 0.005) {
+      for (let i = 0; i < rails.length; i++) {
+        const rail = rails[i]
+        const md   = newDots[i]
+        if (!md) continue
+        const icx = cx + (R / 2) * Math.cos(phi + rail.angle)
+        const icy = cy + (R / 2) * Math.sin(phi + rail.angle)
+        ctx.strokeStyle = circleColor
+        ctx.lineWidth   = 0.5
+        ctx.globalAlpha = connLineAlpha * rail.alpha * drawProgress
+        const [px1, py1] = project(icx, icy)
+        const [px2, py2] = project(md.x, md.y)
+        ctx.beginPath()
+        ctx.moveTo(px1, py1)
+        ctx.lineTo(px2, py2)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+    }
+  }
+
+  const connLineAlpha2 = connectionsP * (1 - phaseP)
+  const centerDots = rails.map(rail => ({
+    x: cx + (R / 2) * Math.cos(phi + rail.angle),
+    y: cy + (R / 2) * Math.sin(phi + rail.angle),
+  }))
+
+  if (maxTrail > 0) {
+    trailHistory.push([...newDots])
+    if (trailHistory.length > maxTrail) {
+      trailHistory = trailHistory.slice(trailHistory.length - maxTrail)
+    }
+  } else {
+    trailHistory = []
+  }
+
+  if (connectionsP > 0.005 && connLineAlpha2 > 0.005 && maxTrail > 0) {
+    centerTrailHistory.push([...centerDots])
+    if (centerTrailHistory.length > maxTrail) {
+      centerTrailHistory = centerTrailHistory.slice(centerTrailHistory.length - maxTrail)
+    }
+  } else if (!P.showConnections) {
+    centerTrailHistory = []
+  }
+
+  // Main dots — flat colour base, drawn below the blended overlay glow.
+  ctx.globalCompositeOperation = P.dotBlendMode
+
+  // Main dot trail
+  if (maxTrail > 0 && trailHistory.length > 1) {
+    const total = trailHistory.length
+    for (let f = 0; f < total - 1; f++) {
+      const age   = (total - 1 - f) / total
+      const alpha = Math.pow(1 - age, 2) * 0.9
+      const frame = trailHistory[f]
+      for (let i = 0; i < frame.length && i < rails.length; i++) {
+        ctx.globalAlpha = alpha * rails[i].alpha
+        fillDot(frame[i].x, frame[i].y, colorFor(rails[i].colorIndex), A.dotScale)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // Center dot trail (connections)
+  if (connectionsP > 0.005 && centerTrailHistory.length > 1) {
+    const total = centerTrailHistory.length
+    for (let f = 0; f < total - 1; f++) {
+      const age   = (total - 1 - f) / total
+      const alpha = Math.pow(1 - age, 2) * 0.9
+      const frame = centerTrailHistory[f]
+      for (let i = 0; i < frame.length && i < rails.length; i++) {
+        ctx.globalAlpha = alpha * rails[i].alpha * connLineAlpha2
+        fillDot(frame[i].x, frame[i].y, circleColor, 0.5)
+      }
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // Main dots
+  const mainScale = A.dotScale
+  if (!P.ringDots) {
+    for (let i = 0; i < newDots.length; i++) {
+      ctx.globalAlpha = rails[i].alpha
+      const hs = dotHoverScale[rails[i].colorIndex] ?? 1
+      fillDot(newDots[i].x, newDots[i].y, colorFor(rails[i].colorIndex), mainScale * hs)
+    }
+  }
+
+  // Center dots (connections, half size, fade with rolling)
+  if (connectionsP > 0.005 && connLineAlpha2 > 0.005) {
+    for (let i = 0; i < centerDots.length; i++) {
+      ctx.globalAlpha = rails[i].alpha * connLineAlpha2
+      fillDot(centerDots[i].x, centerDots[i].y, circleColor, 0.5)
+    }
+  }
+
+  // ── Overlay glow dots ────────────────────────────────────────────────────
+  const overlay   = P.overlayDots
+  const fadeP     = 0   // scroll-driven fade → resting (top-of-page) state
+  const shrink    = 1 - fadeP * fadeP * (3 - 2 * fadeP)
+  const minShrink = overlay ? (overlay.minShrink ?? 0) : 0
+  const dotShrink = minShrink + (1 - minShrink) * shrink
+  const oSizeMul  = overlay ? overlay.sizeMul * dotShrink : 0
+  overlayGate += ((n <= 2 ? 1 : 0) - overlayGate) * Math.min(1, delta * RAIL_SPEED)
+  if (overlay && newDots.length && overlayGate > 0.002) {
+    const oMax = Math.round(overlay.trailFrames * shrink)
+    if (oMax > 0) {
+      overlayTrailHistory.push([...newDots])
+      if (overlayTrailHistory.length > oMax) {
+        overlayTrailHistory = overlayTrailHistory.slice(overlayTrailHistory.length - oMax)
+      }
+    } else {
+      overlayTrailHistory = []
+    }
+    const ocolor = (i) => overlay.colors[i] ?? DOT_COLOR_FALLBACK
+
+    ctx.globalCompositeOperation = overlay.blendMode
+
+    if (oMax > 0 && overlayTrailHistory.length > 1) {
+      const total = overlayTrailHistory.length
+      for (let f = 0; f < total - 1; f++) {
+        const age   = (total - 1 - f) / total
+        const alpha = Math.pow(1 - age, 2) * 0.9 * shrink * overlayGate
+        const frame = overlayTrailHistory[f]
+        for (let i = 0; i < frame.length && i < rails.length; i++) {
+          ctx.globalAlpha = alpha * rails[i].alpha
+          fillDot(frame[i].x, frame[i].y, ocolor(rails[i].colorIndex), oSizeMul)
+        }
+      }
+    }
+    for (let i = 0; i < newDots.length; i++) {
+      ctx.globalAlpha = rails[i].alpha * dotShrink * overlayGate
+      fillDot(newDots[i].x, newDots[i].y, ocolor(rails[i].colorIndex), oSizeMul)
+    }
+    ctx.globalAlpha = 1
+  } else {
+    overlayTrailHistory = []
+  }
+
+  ctx.globalAlpha = 1
+  ctx.globalCompositeOperation = 'source-over'
+  lastDots = newDots
+}
+
+// ─── Export helper (trim logic ported from generators/download.ts) ───────────
+const TRIM_ALPHA = 8
+function contentBounds(cnv) {
+  const src = cnv.getContext('2d')
+  if (!src) return null
+  const Wp = cnv.width, Hp = cnv.height
+  const { data } = src.getImageData(0, 0, Wp, Hp)
+  let minX = Wp, minY = Hp, maxX = -1, maxY = -1
+  for (let y = 0; y < Hp; y++) {
+    for (let x = 0; x < Wp; x++) {
+      if (data[(y * Wp + x) * 4 + 3] > TRIM_ALPHA) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+  }
+  if (maxX < 0) return null
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 }
+}
+// Returns a PNG dataURL of the canvas backing store (full internal resolution).
+// opts.trim → crop to the alpha bounding box; opts.padding → margin per side
+// as a fraction of the box (default 0.1). opts.background → composite over it.
+window.__EXPORT_PNG__ = function (opts = {}) {
+  const out = document.createElement('canvas')
+  const octx = out.getContext('2d')
+  let sx = 0, sy = 0, sw = canvas.width, sh = canvas.height, padX = 0, padY = 0
+  if (opts.trim) {
+    const b = contentBounds(canvas)
+    if (b) {
+      const pad = opts.padding ?? 0.1
+      sx = b.x; sy = b.y; sw = b.w; sh = b.h
+      padX = Math.round(b.w * pad)
+      padY = Math.round(b.h * pad)
+    }
+  }
+  out.width  = sw + padX * 2
+  out.height = sh + padY * 2
+  if (opts.background) {
+    octx.fillStyle = opts.background
+    octx.fillRect(0, 0, out.width, out.height)
+  }
+  octx.drawImage(canvas, sx, sy, sw, sh, padX, padY, sw, sh)
+  return out.toDataURL('image/png')
+}
+
+// ─── Driver: still frame (simulated) or live playback ────────────────────────
+const play = q.play === '1'
+const tSec = q.t !== undefined ? Math.max(0, Number(q.t)) : (play ? 0 : 4)
+const FPS  = 60
+
+// Simulate deterministic 60fps frames up to tSec so eased values, phase and
+// trails are all populated — every intermediate frame is drawn so the trail
+// histories are real.
+let simMs = 0
+const steps = Math.round(tSec * FPS)
+for (let i = 1; i <= steps; i++) {
+  simMs = i * (1000 / FPS)
+  drawFrame(simMs)
+}
+if (steps === 0) drawFrame(0)   // paint at least one frame
+
+if (play) {
+  let rafBase = -1
+  function loop(ts) {
+    if (rafBase < 0) rafBase = ts
+    drawFrame(simMs + (ts - rafBase) + 1000 / FPS)
+    requestAnimationFrame(loop)
+  }
+  requestAnimationFrame(loop)
+  // Ready after the first live frame has painted.
+  requestAnimationFrame(() => requestAnimationFrame(() => { window.__READY__ = true }))
+} else {
+  window.__READY__ = true
+}
+</script>
+</body>
+</html>

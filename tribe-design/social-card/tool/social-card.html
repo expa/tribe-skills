@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tribe Social Card</title>
+<!--
+  Headless render harness for the Tribe social card generator.
+  Faithful vanilla-JS port of website/app/handbook/social-card/SocialCardStudio.tsx
+  (paint() copied verbatim into tool/reference/SocialCardStudio.tsx).
+
+  Usage: open with ?params=<URI-encoded JSON>. See NOTES.md for the full
+  parameter reference. Sets window.__READY__ (a Promise) that resolves after
+  fonts + logo images are loaded and the card is painted — scripts/render.mjs
+  awaits it before screenshotting. Screenshot selector: `canvas`.
+-->
+<style>
+  @font-face { font-family: 'TribeSerif'; font-weight: 300; src: url('../../brand/assets/fonts/TribeSerif-Light.otf') format('opentype'); }
+  @font-face { font-family: 'TribeSerif'; font-weight: 400; src: url('../../brand/assets/fonts/TribeSerif-Book.otf') format('opentype'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 300; src: url('../../brand/assets/fonts/TribeSans-Light.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 400; src: url('../../brand/assets/fonts/TribeSans-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 500; src: url('../../brand/assets/fonts/TribeSans-Medium.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 600; src: url('../../brand/assets/fonts/TribeSans-DemiBold.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeCaption'; font-weight: 400; src: url('../../brand/assets/fonts/TribeCaption-Regular.woff2') format('woff2'); }
+  html, body { margin: 0; padding: 0; background: #F4F4F2; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="card"></canvas>
+<script>
+'use strict'
+
+// ---------------------------------------------------------------------------
+// Brand colors — inlined from website/lib/colors.tsx (canvas needs literal hex).
+const colors = {
+  brand:               '#65D9EE',
+  foregroundPrimary:   '#06141B',
+  backgroundPrimary:   '#FAFAF8',
+  backgroundSecondary: '#EBEBE2',
+  accentBrown:         '#AD5913',
+  accentOrange:        '#FF7C0F',
+  accentYellow:        '#FEDE59',
+  accentTeal:          '#0A99C3',
+  accentOcean:         '#0D4E6E',
+}
+
+const DIMS = {
+  '1:1':  [1080, 1080],
+  '4:5':  [1080, 1350],
+  '9:16': [1080, 1920],
+}
+
+const ACCENTS = {
+  orange: colors.accentOrange,
+  teal:   colors.accentTeal,
+  brown:  colors.accentBrown,
+  yellow: colors.accentYellow,
+  ocean:  colors.accentOcean,
+  brand:  colors.brand,
+}
+
+// Surface colors — ink + logo variant are derived by luminance.
+const SURFACES = [
+  { id: 'paper',  color: colors.backgroundPrimary },
+  { id: 'sand',   color: colors.backgroundSecondary },
+  { id: 'ink',    color: colors.foregroundPrimary },
+  { id: 'ocean',  color: colors.accentOcean },
+  { id: 'teal',   color: colors.accentTeal },
+  { id: 'brand',  color: colors.brand },
+  { id: 'brown',  color: colors.accentBrown },
+  { id: 'orange', color: colors.accentOrange },
+  { id: 'yellow', color: colors.accentYellow },
+]
+
+// Matches the studio's 3× export render.
+const RENDER_SCALE = 3
+
+// ---------------------------------------------------------------------------
+// Params — ?params=<URI-encoded JSON>, merged over studio defaults.
+const DEFAULTS = {
+  format: '1:1',            // '1:1' | '4:5' | '9:16'
+  mode: 'quote',            // 'quote' | 'statement' | 'stat' | 'partner'
+  surface: 'paper',         // SURFACES id
+  accent: 'teal',           // ACCENTS id
+  logo: 'wordmark',         // 'wordmark' | 'symbol' | 'none'
+  eyebrow: 'Field notes',
+  quote: 'The best AI strategy is the one your team can actually ship.',
+  author: 'Jane Doe',
+  role: 'Partner, Tribe AI',
+  headline: 'AI that ships, not slideware.',
+  body: 'We embed senior practitioners to build production systems with your team.',
+  statValue: '3.2×',
+  statLabel: 'faster time to production',
+  support: 'Across 40+ enterprise engagements',
+  partnerLogoUrl: '',       // absolute URL, file: URL, or data: URL (partner mode)
+  showSymbol: true,         // Tribe symbol + '×' in the partner lockup
+  partnerScale: 1,          // partner logo height multiplier (0.5–1.2 in studio)
+}
+
+let overrides = {}
+try {
+  const raw = new URLSearchParams(location.search).get('params')
+  if (raw) overrides = JSON.parse(raw)
+} catch (e) { console.error('Bad ?params= JSON:', e.message) }
+const P = Object.assign({}, DEFAULTS, overrides)
+if (!DIMS[P.format]) P.format = DEFAULTS.format
+if (!['quote', 'statement', 'stat', 'partner'].includes(P.mode)) P.mode = DEFAULTS.mode
+if (!ACCENTS[P.accent]) P.accent = DEFAULTS.accent
+
+// ---------------------------------------------------------------------------
+// Helpers — verbatim ports from SocialCardStudio.tsx.
+
+// hex (#rrggbb) + alpha 0-1 → rgba() string, for opacity-based hierarchy.
+function withAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
+}
+
+// Draw an image tinted to a solid color (its alpha shape, filled with `color`) so
+// partner/client logos always match the card's text color. The tint buffer is sized
+// to the current transform scale so it stays crisp in the 3× export.
+function drawTintedImage(ctx, img, x, y, w, h, color) {
+  const scale = ctx.getTransform().a || 1
+  const bw = Math.max(1, Math.round(w * scale))
+  const bh = Math.max(1, Math.round(h * scale))
+  const off = document.createElement('canvas')
+  off.width = bw
+  off.height = bh
+  const o = off.getContext('2d')
+  if (!o) { ctx.drawImage(img, x, y, w, h); return }
+  o.drawImage(img, 0, 0, bw, bh)
+  o.globalCompositeOperation = 'source-in'
+  o.fillStyle = color
+  o.fillRect(0, 0, bw, bh)
+  ctx.drawImage(off, x, y, w, h)
+}
+
+// Perceptual luminance test → pick light vs dark ink/logo for any surface color.
+function isDarkColor(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  const r = lin(((n >> 16) & 255) / 255)
+  const g = lin(((n >> 8) & 255) / 255)
+  const b = lin((n & 255) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5
+}
+
+// Greedy word-wrap at maxWidth in the ctx's current font; respects hard \n breaks.
+function wrapText(ctx, text, maxWidth) {
+  const out = []
+  for (const para of text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean)
+    if (!words.length) { out.push(''); continue }
+    let line = ''
+    for (const w of words) {
+      const cand = line ? `${line} ${w}` : w
+      if (ctx.measureText(cand).width > maxWidth && line) { out.push(line); line = w }
+      else line = cand
+    }
+    out.push(line)
+  }
+  return out
+}
+
+// Shrink font size until the wrapped text fits maxWidth (no word overflow) AND its
+// block height fits maxHeight. Returns the chosen size + wrapped lines.
+function fitParagraph(ctx, text, family, weight, maxSize, minSize, lineHeightRatio, maxWidth, maxHeight) {
+  let size = maxSize
+  let lines = []
+  for (; size > minSize; size -= 2) {
+    ctx.font = `${weight} ${size}px ${family}`
+    lines = wrapText(ctx, text, maxWidth)
+    const fitsWidth = lines.every((l) => ctx.measureText(l).width <= maxWidth)
+    const fitsHeight = lines.length * size * lineHeightRatio <= maxHeight
+    if (fitsWidth && fitsHeight) break
+  }
+  return { size, lines, lineHeight: size * lineHeightRatio }
+}
+
+// ---------------------------------------------------------------------------
+// Asset loading.
+function loadImage(src, optional) {
+  return new Promise((resolve) => {
+    if (!src) { resolve(null); return }
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => {
+      if (!optional) console.error('Failed to load image:', src)
+      resolve(null)
+    }
+    img.src = src
+  })
+}
+
+const assets = { markDark: null, markLight: null, symDark: null, symLight: null, partner: null }
+
+// ---------------------------------------------------------------------------
+// paint() — faithful port of the studio's paint(), in LOGICAL W×H coordinates.
+// The caller sets the canvas size + transform (RENDER_SCALE× here, matching the
+// studio's 3× export).
+function paint(ctx) {
+  const [W, H] = DIMS[P.format]
+  const surf = SURFACES.find((s) => s.id === P.surface) || SURFACES[0]
+  const bg = surf.color
+  const dark = isDarkColor(bg)
+  const ink = dark ? colors.backgroundPrimary : colors.foregroundPrimary
+  const acc = ACCENTS[P.accent]
+  // Eyebrows use ink, independent of the accent (brand rule: never orange).
+  const eyebrowColor = ink
+  ctx.fillStyle = bg
+  ctx.fillRect(0, 0, W, H)
+
+  const M = Math.round(W * 0.1) // safe margin
+  const cw = W - M * 2
+
+  // Build the centered content stack per mode. Each segment carries its own font.
+  const segs = []
+  const eb = String(P.eyebrow || '').trim()
+  const pushEyebrow = () => {
+    if (!eb) return
+    const size = Math.round(W * 0.026)
+    segs.push({ lines: [eb.toUpperCase()], size, lineHeight: size * 1.2, family: 'TribeCaption', weight: 400, color: eyebrowColor, alpha: 1, caption: true, gapAfter: W * 0.045 })
+  }
+
+  const quote = String(P.quote || '')
+  const author = String(P.author || '')
+  const role = String(P.role || '')
+  const headline = String(P.headline || '')
+  const body = String(P.body || '')
+  const statValue = String(P.statValue || '')
+  const statLabel = String(P.statLabel || '')
+  const support = String(P.support || '')
+
+  if (P.mode === 'quote') {
+    pushEyebrow()
+    const main = fitParagraph(ctx, quote.trim(), 'TribeSerif', 300, W * 0.115, W * 0.05, 1.18, cw, H * 0.5)
+    segs.push({ lines: main.lines, size: main.size, lineHeight: main.lineHeight, family: 'TribeSerif', weight: 300, color: ink, alpha: 1, quoteMain: true, gapAfter: W * 0.05 })
+    const meta = [author.trim(), role.trim()].filter(Boolean).join('   ·   ')
+    if (meta) {
+      const size = Math.round(W * 0.024)
+      segs.push({ lines: [meta.toUpperCase()], size, lineHeight: size * 1.3, family: 'TribeCaption', weight: 400, color: ink, alpha: 0.6, caption: true, gapAfter: 0 })
+    }
+  } else if (P.mode === 'statement') {
+    pushEyebrow()
+    const main = fitParagraph(ctx, headline.trim(), 'TribeSerif', 300, W * 0.13, W * 0.055, 1.12, cw, H * 0.55)
+    segs.push({ lines: main.lines, size: main.size, lineHeight: main.lineHeight, family: 'TribeSerif', weight: 300, color: ink, alpha: 1, gapAfter: body.trim() ? W * 0.05 : 0 })
+    if (body.trim()) {
+      const sub = fitParagraph(ctx, body.trim(), 'TribeSans', 300, W * 0.04, W * 0.028, 1.45, cw, H * 0.25)
+      segs.push({ lines: sub.lines, size: sub.size, lineHeight: sub.lineHeight, family: 'TribeSans', weight: 300, color: ink, alpha: 0.7, gapAfter: 0 })
+    }
+  } else if (P.mode === 'stat') {
+    pushEyebrow()
+    const num = fitParagraph(ctx, statValue.trim(), 'TribeSerif', 300, W * 0.34, W * 0.12, 1, cw, H * 0.42)
+    segs.push({ lines: num.lines, size: num.size, lineHeight: num.lineHeight, family: 'TribeSerif', weight: 300, color: acc, alpha: 1, gapAfter: W * 0.035 })
+    if (statLabel.trim()) {
+      const lab = fitParagraph(ctx, statLabel.trim(), 'TribeSerif', 300, W * 0.07, W * 0.04, 1.15, cw, H * 0.22)
+      segs.push({ lines: lab.lines, size: lab.size, lineHeight: lab.lineHeight, family: 'TribeSerif', weight: 300, color: ink, alpha: 1, gapAfter: support.trim() ? W * 0.04 : 0 })
+    }
+    if (support.trim()) {
+      const size = Math.round(W * 0.024)
+      segs.push({ lines: [support.trim().toUpperCase()], size, lineHeight: size * 1.3, family: 'TribeCaption', weight: 400, color: ink, alpha: 0.6, caption: true, gapAfter: 0 })
+    }
+  } else {
+    // Partner: logo lockup at the top (above the eyebrow), then eyebrow →
+    // announcement → supporting line (same body style as Statement).
+    segs.push({ lines: [], size: 0, lineHeight: 0, family: '', weight: 0, color: ink, alpha: 1, lockup: true, height: W * 0.11, gapAfter: W * 0.09 })
+    pushEyebrow()
+    if (headline.trim()) {
+      const main = fitParagraph(ctx, headline.trim(), 'TribeSerif', 300, W * 0.09, W * 0.045, 1.14, cw, H * 0.3)
+      segs.push({ lines: main.lines, size: main.size, lineHeight: main.lineHeight, family: 'TribeSerif', weight: 300, color: ink, alpha: 1, gapAfter: support.trim() ? W * 0.05 : 0 })
+    }
+    if (support.trim()) {
+      const sub = fitParagraph(ctx, support.trim(), 'TribeSans', 300, W * 0.04, W * 0.028, 1.45, cw, H * 0.22)
+      segs.push({ lines: sub.lines, size: sub.size, lineHeight: sub.lineHeight, family: 'TribeSans', weight: 300, color: ink, alpha: 0.7, gapAfter: 0 })
+    }
+  }
+
+  // Vertically center the stack, but keep clear of the logo row at the bottom.
+  const bottomReserve = P.logo !== 'none' ? H * 0.08 : 0
+  const totalH = segs.reduce((s, seg) => s + (seg.lockup ? seg.height || 0 : seg.lines.length * seg.lineHeight) + seg.gapAfter, 0)
+  let y = Math.max(M, (H - bottomReserve - totalH) / 2)
+
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  // Track the quote paragraph's geometry so we can hang quotation marks around it.
+  let qi = null
+  for (const seg of segs) {
+    // Partner lockup: (optional Tribe symbol ×) partner logo, left-aligned with
+    // the text at the left margin, equal heights.
+    if (seg.lockup) {
+      const Ht = seg.height || W * 0.11
+      const partner = assets.partner
+      const cy = y + Ht / 2
+      let x = M
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      if (P.showSymbol) {
+        const tribe = dark ? assets.symLight : assets.symDark
+        const pad = W * 0.04
+        const sepSize = Ht * 0.55
+        ctx.font = `300 ${sepSize}px TribeSerif`
+        const sepW = ctx.measureText('×').width
+        const tribeW = tribe ? (tribe.naturalWidth / tribe.naturalHeight) * Ht : Ht * 0.83
+        if (tribe) ctx.drawImage(tribe, x, y, tribeW, Ht)
+        x += tribeW + pad
+        ctx.fillStyle = withAlpha(ink, 0.55)
+        ctx.fillText('×', x, cy)
+        x += sepW + pad
+      }
+      if (partner) {
+        const partnerH = Ht * P.partnerScale
+        const partnerW = (partner.naturalWidth / partner.naturalHeight) * partnerH
+        // Always tint the partner/client logo to the text color for a clean lockup.
+        drawTintedImage(ctx, partner, x, cy - partnerH / 2, partnerW, partnerH, ink)
+      } else {
+        const partnerW = Ht * 1.9
+        ctx.strokeStyle = withAlpha(ink, 0.3)
+        ctx.lineWidth = Math.max(1, W * 0.002)
+        ctx.setLineDash([W * 0.012, W * 0.01])
+        ctx.strokeRect(x, y, partnerW, Ht)
+        ctx.setLineDash([])
+        ctx.fillStyle = withAlpha(ink, 0.4)
+        ctx.font = `400 ${Ht * 0.15}px TribeCaption`
+        ctx.textAlign = 'center'
+        ctx.letterSpacing = `${Ht * 0.015}px`
+        ctx.fillText('PARTNER LOGO', x + partnerW / 2, cy)
+        ctx.letterSpacing = '0px'
+      }
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      y += Ht + seg.gapAfter
+      continue
+    }
+    ctx.font = `${seg.weight} ${seg.size}px ${seg.family}`
+    ctx.fillStyle = seg.alpha < 1 ? withAlpha(seg.color, seg.alpha) : seg.color
+    ctx.letterSpacing = seg.caption ? `${Math.max(1, seg.size * 0.09)}px` : '0px'
+    const firstY = y
+    seg.lines.forEach((line, li) => {
+      ctx.fillText(line, M, y)
+      if (seg.quoteMain && li === seg.lines.length - 1) {
+        qi = { firstY, lastY: y, size: seg.size, lastW: ctx.measureText(line).width }
+      }
+      y += seg.lineHeight
+    })
+    y += seg.gapAfter
+  }
+  ctx.letterSpacing = '0px'
+
+  // Hanging quotation marks — the opening mark hangs into the left margin so the
+  // text stays flush at M (no indent), and both marks use the accent color.
+  if (qi) {
+    const q = qi
+    ctx.fillStyle = acc
+    ctx.font = `300 ${q.size}px TribeSerif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    const gap = q.size * 0.08
+    const openW = ctx.measureText('“').width
+    ctx.fillText('“', M - openW - gap, q.firstY)
+    ctx.fillText('”', M + q.lastW + gap, q.lastY)
+  }
+
+  // Logo (wordmark or symbol), bottom-left in the safe margin. Dark surface → light mark.
+  if (P.logo !== 'none') {
+    const mark = P.logo === 'wordmark'
+      ? (dark ? assets.markLight : assets.markDark)
+      : (dark ? assets.symLight : assets.symDark)
+    const h = P.logo === 'wordmark' ? W * 0.03 : W * 0.05
+    if (mark && mark.naturalWidth) {
+      const w = (mark.naturalWidth / mark.naturalHeight) * h
+      ctx.drawImage(mark, M, H - M - h, w, h)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Boot: load fonts + logos, size the canvas, paint. window.__READY__ resolves
+// after the paint so headless capture waits for the finished card.
+window.__READY__ = (async () => {
+  const need = [
+    '300 120px TribeSerif',
+    '400 120px TribeSerif',
+    '300 40px TribeSans',
+    '400 24px TribeCaption',
+  ]
+  try {
+    await Promise.all(need.map((f) => document.fonts.load(f)))
+    await document.fonts.ready
+  } catch (e) { console.error('Font load:', e.message) }
+
+  const [markDark, markLight, symDark, symLight, partner] = await Promise.all([
+    loadImage('../../brand/assets/logos/wordmark.svg'),
+    loadImage('../../brand/assets/logos/wordmark-inverted.svg'),
+    loadImage('../../brand/assets/logos/symbol.svg'),
+    loadImage('../../brand/assets/logos/symbol-inverted.svg'),
+    loadImage(P.partnerLogoUrl, true),
+  ])
+  Object.assign(assets, { markDark, markLight, symDark, symLight, partner })
+
+  const canvas = document.getElementById('card')
+  const [W, H] = DIMS[P.format]
+  canvas.width = W * RENDER_SCALE
+  canvas.height = H * RENDER_SCALE
+  canvas.style.width = `${W}px`
+  canvas.style.height = `${H}px`
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0)
+  paint(ctx)
+  return true
+})()
+</script>
+</body>
+</html>

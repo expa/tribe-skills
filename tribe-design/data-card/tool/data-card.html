@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tribe Data Card</title>
+<!--
+  Headless render harness for the Tribe data card (chart) generator.
+  Faithful vanilla-JS port of website/app/handbook/data-card/DataCardStudio.tsx
+  (paint() copied verbatim into tool/reference/DataCardStudio.tsx).
+
+  Usage: open with ?params=<URI-encoded JSON>. See NOTES.md for the full
+  parameter reference and the data string format. Sets window.__READY__ (a
+  Promise) that resolves after fonts + logo images are loaded and the card is
+  painted — scripts/render.mjs awaits it. Screenshot selector: `canvas`.
+-->
+<style>
+  @font-face { font-family: 'TribeSerif'; font-weight: 300; src: url('../../brand/assets/fonts/TribeSerif-Light.otf') format('opentype'); }
+  @font-face { font-family: 'TribeSerif'; font-weight: 400; src: url('../../brand/assets/fonts/TribeSerif-Book.otf') format('opentype'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 300; src: url('../../brand/assets/fonts/TribeSans-Light.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 400; src: url('../../brand/assets/fonts/TribeSans-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 500; src: url('../../brand/assets/fonts/TribeSans-Medium.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans'; font-weight: 600; src: url('../../brand/assets/fonts/TribeSans-DemiBold.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeCaption'; font-weight: 400; src: url('../../brand/assets/fonts/TribeCaption-Regular.woff2') format('woff2'); }
+  html, body { margin: 0; padding: 0; background: #F4F4F2; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="card"></canvas>
+<script>
+'use strict'
+
+// ---------------------------------------------------------------------------
+// Brand colors — inlined from website/lib/colors.tsx (canvas needs literal hex).
+const colors = {
+  brand:               '#65D9EE',
+  foregroundPrimary:   '#06141B',
+  backgroundPrimary:   '#FAFAF8',
+  backgroundSecondary: '#EBEBE2',
+  accentBrown:         '#AD5913',
+  accentOrange:        '#FF7C0F',
+  accentYellow:        '#FEDE59',
+  accentTeal:          '#0A99C3',
+  accentOcean:         '#0D4E6E',
+}
+
+const DIMS = {
+  '1:1':  [1080, 1080],
+  '16:9': [1600, 900],
+  '4:5':  [1080, 1350],
+}
+
+const SURFACES = [
+  { id: 'paper',  color: colors.backgroundPrimary },
+  { id: 'sand',   color: colors.backgroundSecondary },
+  { id: 'ink',    color: colors.foregroundPrimary },
+  { id: 'ocean',  color: colors.accentOcean },
+  { id: 'teal',   color: colors.accentTeal },
+  { id: 'brand',  color: colors.brand },
+  { id: 'brown',  color: colors.accentBrown },
+  { id: 'orange', color: colors.accentOrange },
+  { id: 'yellow', color: colors.accentYellow },
+]
+
+const ACCENTS = {
+  teal:   colors.accentTeal,
+  orange: colors.accentOrange,
+  brown:  colors.accentBrown,
+  yellow: colors.accentYellow,
+  ocean:  colors.accentOcean,
+  brand:  colors.brand,
+}
+const SERIES_ORDER = ['teal', 'orange', 'brown', 'yellow', 'ocean', 'brand']
+// Colors for multi-series data: the chosen accent first, then the rest in order.
+function seriesColors(primary, n) {
+  const order = [primary, ...SERIES_ORDER.filter((a) => a !== primary)]
+  return Array.from({ length: n }, (_, i) => ACCENTS[order[i % order.length]])
+}
+
+// Matches the studio's 2× export render.
+const RENDER_SCALE = 2
+
+// ---------------------------------------------------------------------------
+// Params — ?params=<URI-encoded JSON>, merged over studio defaults.
+const DEFAULTS = {
+  format: '16:9',           // '1:1' | '16:9' | '4:5'
+  chart: 'bar',             // 'bar' | 'line'
+  surface: 'paper',         // SURFACES id
+  accent: 'teal',           // ACCENTS id (first series color)
+  logo: 'wordmark',         // 'none' | 'wordmark' | 'symbol'
+  showValues: true,         // print each value near its bar/point
+  eyebrow: 'By the numbers',
+  title: 'Time to production, by engagement',
+  helper: 'Source: Analytics',
+  data: 'Q1, 12\nQ2, 19\nQ3, 27\nQ4, 41', // "Label, Value[, Value…]" per line
+}
+
+let overrides = {}
+try {
+  const raw = new URLSearchParams(location.search).get('params')
+  if (raw) overrides = JSON.parse(raw)
+} catch (e) { console.error('Bad ?params= JSON:', e.message) }
+const P = Object.assign({}, DEFAULTS, overrides)
+if (!DIMS[P.format]) P.format = DEFAULTS.format
+if (!['bar', 'line'].includes(P.chart)) P.chart = DEFAULTS.chart
+if (!ACCENTS[P.accent]) P.accent = DEFAULTS.accent
+
+// ---------------------------------------------------------------------------
+// Helpers — verbatim ports from DataCardStudio.tsx.
+
+function withAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
+}
+function isDarkColor(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * lin(((n >> 16) & 255) / 255) + 0.7152 * lin(((n >> 8) & 255) / 255) + 0.0722 * lin((n & 255) / 255) < 0.5
+}
+
+// Greedy word-wrap at maxWidth in the ctx's current font; respects hard \n breaks.
+function wrapText(ctx, text, maxWidth) {
+  const out = []
+  for (const para of text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean)
+    if (!words.length) { out.push(''); continue }
+    let line = ''
+    for (const word of words) {
+      const cand = line ? `${line} ${word}` : word
+      if (ctx.measureText(cand).width > maxWidth && line) { out.push(line); line = word }
+      else line = cand
+    }
+    out.push(line)
+  }
+  return out
+}
+
+// Parse a single value token like "12", "$3.2M", or "10 (Great)".
+function parseValue(token) {
+  const s = token.trim()
+  if (!s) return null
+  const pm = s.match(/^(.*?)\s*\(([^)]*)\)\s*$/)
+  const numPart = (pm ? pm[1] : s).trim()
+  const custom = pm ? pm[2].trim() : ''
+  const value = parseFloat(numPart.replace(/[^0-9.-]/g, ''))
+  if (Number.isNaN(value)) return null
+  return { value, display: custom || numPart }
+}
+
+// Parse "Label, Value[, Value…]" lines into points. The label may contain spaces;
+// the first value can follow the label with a comma/tab OR a space. Extra values
+// are comma-separated. A trailing "(Custom)" on any value overrides its printed label.
+//   "Q1, 12"            → Q1: [12]
+//   "Q1 10, 20"         → Q1: [10, 20]
+//   "Q1 10 (Great)"     → Q1: [10 shown as "Great"]
+function parseData(text) {
+  const points = []
+  const numRe = /^([-+]?[$€£]?\d[\d.]*[%×xKMBkmb]*(?:\s*\([^)]*\))?)$/
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    const parts = line.split(/\s*[,\t]\s*/)
+    let label = ''
+    const values = []
+    // First segment may be "Label" or "Label value" (space-separated).
+    const first = parts[0]
+    const spaceSplit = first.match(/^(.*?)\s+(\S.*)$/)
+    if (spaceSplit && numRe.test(spaceSplit[2].trim())) {
+      label = spaceSplit[1].trim()
+      const v = parseValue(spaceSplit[2])
+      if (v) values.push(v)
+    } else {
+      label = first.trim()
+    }
+    for (const seg of parts.slice(1)) {
+      const v = parseValue(seg)
+      if (v) values.push(v)
+    }
+    if (!label || !values.length) continue
+    points.push({ label, values })
+  }
+  const seriesCount = points.reduce((m, p) => Math.max(m, p.values.length), 0)
+  return { points, seriesCount }
+}
+
+// ---------------------------------------------------------------------------
+// Asset loading.
+function loadImage(src) {
+  return new Promise((resolve) => {
+    if (!src) { resolve(null); return }
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => { console.error('Failed to load image:', src); resolve(null) }
+    img.src = src
+  })
+}
+
+const assets = { markDark: null, markLight: null, symDark: null, symLight: null }
+
+// ---------------------------------------------------------------------------
+// paint() — faithful port of the studio's paint(), in LOGICAL W×H coordinates.
+// The caller sets the canvas size + transform (RENDER_SCALE× here, matching the
+// studio's 2× export).
+function paint(ctx) {
+  const [W, H] = DIMS[P.format]
+  const surf = SURFACES.find((s) => s.id === P.surface) || SURFACES[0]
+  const bg = surf.color
+  const dark = isDarkColor(bg)
+  const ink = dark ? colors.backgroundPrimary : colors.foregroundPrimary
+  ctx.fillStyle = bg
+  ctx.fillRect(0, 0, W, H)
+
+  const M = Math.round(W * 0.07)
+  const cw = W - M * 2
+  const { points, seriesCount } = parseData(String(P.data || ''))
+  const palette = seriesColors(P.accent, Math.max(1, seriesCount))
+
+  const eyebrow = String(P.eyebrow || '')
+  const title = String(P.title || '')
+  const helper = String(P.helper || '')
+
+  // Header: eyebrow + title, top-left. (Eyebrow matches the social-card treatment.)
+  let headerBottom = M
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  if (eyebrow.trim()) {
+    // Landscape is much wider, so scale the eyebrow down there to keep it in proportion.
+    const size = Math.round(W * (P.format === '16:9' ? 0.019 : 0.026))
+    ctx.font = `400 ${size}px TribeCaption`
+    ctx.fillStyle = ink
+    ctx.letterSpacing = `${Math.max(1, size * 0.09)}px`
+    ctx.fillText(eyebrow.trim().toUpperCase(), M, headerBottom)
+    ctx.letterSpacing = '0px'
+    headerBottom += size * 1.7
+  }
+  if (title.trim()) {
+    const size = Math.round(W * 0.038)
+    ctx.font = `300 ${size}px TribeSerif`
+    ctx.fillStyle = ink
+    const lines = wrapText(ctx, title.trim(), cw)
+    const lh = size * 1.25
+    lines.forEach((line) => { ctx.fillText(line, M, headerBottom); headerBottom += lh })
+  }
+
+  // Bottom row: wordmark/symbol (left) + helper text (right), on the same baseline.
+  const logoH = P.logo === 'symbol' ? H * 0.055 : H * 0.035
+  const helperSize = Math.round(W * 0.018)
+  const hasBottom = P.logo !== 'none' || !!helper.trim()
+  const bottomH = P.logo !== 'none' ? logoH : (helper.trim() ? helperSize : 0)
+  // Plot area, generously spaced from the header above and the footer below.
+  const labelBand = H * 0.05 // room for x labels
+  const plotTop = headerBottom + H * 0.08
+  const plotBottom = (H - M - bottomH) - (hasBottom ? H * 0.06 : H * 0.03) - labelBand
+  const plotLeft = M
+  const plotRight = W - M
+  const plotW = plotRight - plotLeft
+  const plotH = Math.max(10, plotBottom - plotTop)
+  const maxV = Math.max(1, ...points.flatMap((p) => p.values.map((v) => v.value)))
+
+  const labelSize = Math.round(W * 0.016)
+  const valueSize = Math.round(W * 0.018)
+
+  // Baseline hairline.
+  ctx.strokeStyle = withAlpha(ink, 0.15)
+  ctx.lineWidth = Math.max(1, W * 0.0015)
+  ctx.beginPath(); ctx.moveTo(plotLeft, plotBottom); ctx.lineTo(plotRight, plotBottom); ctx.stroke()
+
+  if (points.length) {
+    if (P.chart === 'bar') {
+      const slot = plotW / points.length
+      const groupW = Math.min(slot * 0.7, W * 0.14 * Math.max(1, seriesCount))
+      const innerGap = seriesCount > 1 ? groupW * 0.08 : 0
+      const bw = (groupW - innerGap * (seriesCount - 1)) / Math.max(1, seriesCount)
+      points.forEach((p, i) => {
+        const cx = plotLeft + slot * (i + 0.5)
+        const gx = cx - groupW / 2
+        p.values.forEach((val, j) => {
+          const bh = (val.value / maxV) * plotH
+          const x = gx + j * (bw + innerGap)
+          const y = plotBottom - bh
+          ctx.fillStyle = palette[j]
+          ctx.fillRect(x, y, bw, bh)
+          if (P.showValues) {
+            ctx.fillStyle = ink
+            ctx.font = `400 ${valueSize}px TribeCaption`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'bottom'
+            ctx.fillText(val.display, x + bw / 2, y - H * 0.012)
+          }
+        })
+        ctx.fillStyle = withAlpha(ink, 0.6)
+        ctx.font = `400 ${labelSize}px TribeCaption`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillText(p.label.toUpperCase(), cx, plotBottom + H * 0.015)
+      })
+    } else {
+      const stepX = points.length > 1 ? plotW / (points.length - 1) : 0
+      const px = (i) => plotLeft + (points.length > 1 ? stepX * i : plotW / 2)
+      const py = (v) => plotBottom - (v / maxV) * plotH
+      // One line per series.
+      for (let j = 0; j < seriesCount; j++) {
+        ctx.strokeStyle = palette[j]
+        ctx.lineWidth = Math.max(2, W * 0.004)
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        let started = false
+        points.forEach((p, i) => {
+          const val = p.values[j]
+          if (!val) { started = false; return }
+          const x = px(i), y = py(val.value)
+          if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+        })
+        ctx.stroke()
+        // Dots + value labels.
+        points.forEach((p, i) => {
+          const val = p.values[j]
+          if (!val) return
+          const x = px(i), y = py(val.value)
+          ctx.fillStyle = palette[j]
+          ctx.beginPath(); ctx.arc(x, y, Math.max(3, W * 0.006), 0, Math.PI * 2); ctx.fill()
+          if (P.showValues) {
+            ctx.fillStyle = ink
+            ctx.font = `400 ${valueSize}px TribeCaption`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'bottom'
+            ctx.fillText(val.display, x, y - H * 0.018)
+          }
+        })
+      }
+      // X labels (once per point).
+      ctx.fillStyle = withAlpha(ink, 0.6)
+      ctx.font = `400 ${labelSize}px TribeCaption`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      points.forEach((p, i) => ctx.fillText(p.label.toUpperCase(), px(i), plotBottom + H * 0.015))
+    }
+  }
+
+  // Wordmark or symbol, bottom-left. Dark surface → light mark.
+  if (P.logo !== 'none') {
+    const mark = P.logo === 'wordmark'
+      ? (dark ? assets.markLight : assets.markDark)
+      : (dark ? assets.symLight : assets.symDark)
+    if (mark && mark.naturalWidth) {
+      const w = (mark.naturalWidth / mark.naturalHeight) * logoH
+      ctx.drawImage(mark, M, H - M - logoH, w, logoH)
+    }
+  }
+
+  // Helper text, bottom-right — extra-small body, tertiary ink, aligned with the logo row.
+  if (helper.trim()) {
+    ctx.font = `400 ${helperSize}px TribeSans`
+    ctx.fillStyle = withAlpha(ink, 0.5)
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+    const cy = P.logo !== 'none' ? H - M - logoH / 2 : H - M - helperSize / 2
+    ctx.fillText(helper.trim(), W - M, cy)
+  }
+
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+  ctx.letterSpacing = '0px'
+}
+
+// ---------------------------------------------------------------------------
+// Boot: load fonts + logos, size the canvas, paint. window.__READY__ resolves
+// after the paint so headless capture waits for the finished card.
+window.__READY__ = (async () => {
+  try {
+    await Promise.all([
+      document.fonts.load('300 60px TribeSerif'),
+      document.fonts.load('400 24px TribeCaption'),
+      document.fonts.load('400 24px TribeSans'),
+    ])
+    await document.fonts.ready
+  } catch (e) { console.error('Font load:', e.message) }
+
+  const [markDark, markLight, symDark, symLight] = await Promise.all([
+    loadImage('../../brand/assets/logos/wordmark.svg'),
+    loadImage('../../brand/assets/logos/wordmark-inverted.svg'),
+    loadImage('../../brand/assets/logos/symbol.svg'),
+    loadImage('../../brand/assets/logos/symbol-inverted.svg'),
+  ])
+  Object.assign(assets, { markDark, markLight, symDark, symLight })
+
+  const canvas = document.getElementById('card')
+  const [W, H] = DIMS[P.format]
+  canvas.width = W * RENDER_SCALE
+  canvas.height = H * RENDER_SCALE
+  canvas.style.width = `${W}px`
+  canvas.style.height = `${H}px`
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0)
+  paint(ctx)
+  return true
+})()
+</script>
+</body>
+</html>

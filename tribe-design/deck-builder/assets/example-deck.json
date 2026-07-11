@@ -1,0 +1,81 @@
+{
+  "deck": {
+    "name": "Tribe AI — Example pitch",
+    "background": "paper",
+    "eyebrow": "Tribe AI",
+    "deckTitle": "AI in production",
+    "footer": "Tribe AI — Confidential",
+    "showFooterLine": true,
+    "showPageNumbers": true,
+    "showLogo": false
+  },
+  "slides": [
+    {
+      "layout": "cover",
+      "title": "AI that ships,\nnot slideware",
+      "date": "JULY 2026",
+      "accent": "teal"
+    },
+    {
+      "layout": "agenda",
+      "title": "Agenda",
+      "items": [
+        { "title": "Where AI efforts stall", "body": "Why most pilots never reach production" },
+        { "title": "How we work", "body": "Senior practitioners, embedded in your team" },
+        { "title": "What it changes", "body": "Delivery speed, cost, and real business impact" },
+        { "title": "Where to start", "body": "A first engagement, scoped in weeks" }
+      ]
+    },
+    {
+      "layout": "chapter",
+      "kicker": "01",
+      "title": "Where AI efforts stall",
+      "accent": "teal"
+    },
+    {
+      "layout": "bullets",
+      "title": "Most pilots stall on people and process",
+      "bullets": [
+        "Prototypes impress in demos but never meet production standards",
+        "Internal teams carry AI work on top of their day jobs",
+        "No owner for the path from model to deployed product",
+        "Success is measured in demos shipped, not business impact"
+      ],
+      "accent": "orange"
+    },
+    {
+      "layout": "stats",
+      "title": "What embedded delivery changes",
+      "items": [
+        { "title": "3×", "body": "Faster path to production" },
+        { "title": "40%", "body": "Lower delivery cost" },
+        { "title": "2 wks", "body": "From kickoff to working model" }
+      ]
+    },
+    {
+      "layout": "quote",
+      "quote": "Tribe didn't just deliver a model — they left our team able to run it.",
+      "attribution": "— Head of Data, Enterprise client",
+      "accent": "teal"
+    },
+    {
+      "layout": "chart",
+      "title": "Time to production, by engagement",
+      "chartType": "bar",
+      "items": [
+        { "label": "Q1", "title": "12" },
+        { "label": "Q2", "title": "40", "highlight": true },
+        { "label": "Q3", "title": "27" },
+        { "label": "Q4", "title": "41" }
+      ],
+      "body": "Source: Tribe AI delivery data",
+      "accent": "teal"
+    },
+    {
+      "layout": "statement",
+      "title": "The teams that win won't run the most pilots. They'll ship.",
+      "body": "Start with one production system, prove the impact, and compound from there.",
+      "accent": "brown"
+    }
+  ]
+}

@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tribe — Deck</title>
+<!--
+  Tribe deck-builder — STANDALONE deck viewer/printer. One self-contained
+  vanilla-JS port of the website's SlideForge renderer (SlideRenderer.tsx +
+  SlideFrame.tsx + BarChart.tsx + CoverFigure.tsx + AutoFit.tsx + DeckViewer.tsx
+  + PrintDeck/deck-builder.css). No website, no React, no CDN.
+
+  INPUT (one of):
+    deck.html#<base64hash>       — the share-hash encode-deck.mjs / share.ts produce
+    deck.html?deck=<base64hash>  — same hash as a query param (render.mjs --query)
+    deck.html                    — no hash: drop zone / file picker for a deck.json
+
+  Extra query params:
+    slide=<n>   start the viewer on slide n (1-based) — handy for per-slide shots
+    bare=1      hide the viewer's page indicator (clean screenshots)
+
+  KEYS: ArrowRight / Space / PageDown next · ArrowLeft / PageUp prev · P print.
+  PRINT: Cmd+P (or render.mjs --pdf) — every slide, one 1280×720 page each,
+  vector text (@page 1280px 720px; the full deck is always rendered off-screen
+  in .print-deck so headless print needs no interaction).
+  Sets window.__READY__ (Promise): fonts loaded + images settled + first slide
+  rendered + auto-fit pass done.
+
+  Assets resolve RELATIVE TO THIS FILE: ../../brand/assets/fonts/*,
+  ../../brand/assets/logos/*. Keep it inside the skill folder.
+-->
+<style>
+  /* ── Fonts (ship with the skill) ─────────────────────────────────────── */
+  @font-face { font-family: 'TribeSerif';   font-weight: 300; src: url('../../brand/assets/fonts/TribeSerif-Light.otf') format('opentype'); }
+  @font-face { font-family: 'TribeSerif';   font-weight: 400; src: url('../../brand/assets/fonts/TribeSerif-Book.otf') format('opentype'); }
+  @font-face { font-family: 'TribeSans';    font-weight: 300; src: url('../../brand/assets/fonts/TribeSans-Light.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans';    font-weight: 400; src: url('../../brand/assets/fonts/TribeSans-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans';    font-weight: 500; src: url('../../brand/assets/fonts/TribeSans-Medium.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeSans';    font-weight: 600; src: url('../../brand/assets/fonts/TribeSans-DemiBold.woff2') format('woff2'); }
+  @font-face { font-family: 'TribeCaption'; font-weight: 400; src: url('../../brand/assets/fonts/TribeCaption-Regular.woff2') format('woff2'); }
+
+  /* ── Tokens (mirror of the site's @theme / tribe-tokens.css) ─────────── */
+  :root {
+    --serif: "TribeSerif", ui-serif, Georgia, serif;
+    --sans: "TribeSans", ui-sans-serif, system-ui, sans-serif;
+    --caption: "TribeCaption", var(--sans);
+    --background-primary: #FAFAF8;
+    --background-secondary: #EBEBE2;
+    --foreground-primary: #06141B;
+    --foreground-secondary: #050F15;
+    --accent-teal: #0A99C3;    --accent-teal-contrast: #B2F3FF;
+    --accent-brown: #AD5913;   --accent-brown-contrast: #F4C29D;
+    --accent-orange: #FF7C0F;  --accent-orange-contrast: #6D1D00;
+    --accent-yellow: #FEDE59;  --accent-yellow-contrast: #7C6503;
+    --accent-ocean: #0D4E6E;   --accent-ocean-contrast: #BEE6F5;
+  }
+
+  /* ── Reset (the slice of Tailwind preflight the slides rely on) ──────── */
+  *, ::before, ::after { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid; }
+  img, svg { display: block; vertical-align: middle; }
+  ul, ol { list-style: none; }
+  h1, h2, h3, p, span { font: inherit; }
+  button { background: none; font: inherit; color: inherit; cursor: default; }
+
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { font-family: var(--sans); background: var(--foreground-secondary); }
+  @media screen { body { overflow: hidden; } }
+
+  /* ── The 1280×720 slide frame + chrome (SlideFrame.tsx) ──────────────── */
+  .slide-frame {
+    --ink: var(--foreground-primary);
+    position: relative; overflow: hidden;
+    width: 1280px; height: 720px;
+    color: var(--ink);
+    font-family: var(--sans); font-size: 18px;
+    print-color-adjust: exact; -webkit-print-color-adjust: exact;
+  }
+  .chrome-top {
+    position: absolute; left: 0; right: 0; top: 48px; height: 20px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 64px;
+  }
+  .eyebrow, .running {
+    font-family: var(--caption); font-size: 12px; line-height: 16px;
+    text-transform: uppercase; letter-spacing: 1.6px;
+    color: color-mix(in srgb, var(--ink) 45%, transparent);
+  }
+  .logo-mark { height: 20px; width: auto; opacity: 0.9; }
+  .chrome-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 28px 64px;
+  }
+  .chrome-bottom.ruled { border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); }
+  .footer-text { font-family: var(--sans); font-size: 12px; line-height: 16px; font-weight: 400; color: color-mix(in srgb, var(--ink) 45%, transparent); }
+  .page-num { font-family: var(--caption); font-size: 12px; line-height: 16px; letter-spacing: 1.6px; color: color-mix(in srgb, var(--ink) 45%, transparent); }
+
+  /* Body region + AutoFit (AutoFit.tsx) */
+  .body-region { position: absolute; inset: 0; padding: 112px 64px; }
+  .body-region.chart-pad { padding: 112px 64px 80px; }
+  .fit { display: flex; height: 100%; width: 100%; justify-content: center; overflow: hidden; }
+  .fit.top { align-items: flex-start; }
+  .fit.center { align-items: center; }
+  .fit-inner { width: 100%; }
+  .fit-inner.fill { height: 100%; }
+
+  /* Shared text utilities */
+  .balance { text-wrap: balance; }
+  .pretty { text-wrap: pretty; }
+  .pre-line { white-space: pre-line; }
+
+  /* ── Layouts (SlideRenderer.tsx, values = the site's Tailwind classes) ── */
+
+  /* cover */
+  .ly-cover { position: absolute; inset: 0; }
+  .cover-figure { position: absolute; inset: 0; pointer-events: none; }
+  .cover-figure .layer { position: absolute; }
+  .cover-figure .layer svg { width: 100%; height: 100%; display: block; }
+  .cover-figure .layer.r180 svg { transform: rotate(180deg); }
+  .cover-figure .layer.multiply { mix-blend-mode: multiply; }
+  .cover-lockup { position: absolute; left: 64px; top: 56px; display: flex; align-items: center; gap: 20px; }
+  .cover-lockup .pair { display: flex; align-items: center; gap: 12px; }
+  .cover-lockup .symbol { height: 36px; width: auto; }
+  .cover-lockup .wordmark { height: 16px; width: auto; }
+  .cover-lockup .x { font-size: 24px; line-height: 32px; font-weight: 300; color: color-mix(in srgb, var(--ink) 30%, transparent); }
+  .cover-lockup .partner { height: 32px; width: auto; object-fit: contain; }
+  .cover-text { position: absolute; bottom: 64px; left: 64px; max-width: 760px; }
+  .cover-text h1 { font-family: var(--serif); font-size: 80px; font-weight: 300; line-height: 1.2; color: var(--ink); }
+  .cover-text .date { margin-top: 32px; font-family: var(--caption); font-size: 12px; line-height: 16px; text-transform: uppercase; letter-spacing: 1.6px; color: color-mix(in srgb, var(--ink) 50%, transparent); }
+
+  /* title */
+  .ly-title { display: flex; flex-direction: column; gap: 24px; max-width: 896px; }
+  .ly-title h1 { font-family: var(--serif); font-size: 72px; font-weight: 300; line-height: 1.05; }
+  .ly-title .sub { max-width: 672px; font-family: var(--sans); font-size: 24px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* statement */
+  .ly-statement { max-width: 1024px; }
+  .ly-statement h2 { font-family: var(--serif); font-size: 60px; font-weight: 300; line-height: 1.2; }
+  .ly-statement .support { margin-top: 32px; max-width: 768px; font-family: var(--sans); font-size: 20px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* bullets */
+  .ly-bullets { display: flex; width: 100%; flex-direction: column; gap: 48px; }
+  .ly-bullets h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.2; }
+  .ly-bullets ul { display: grid; column-gap: 40px; row-gap: 24px; }
+  .ly-bullets li { display: flex; align-items: baseline; gap: 20px; }
+  .ly-bullets .num { font-family: var(--caption); font-size: 18px; line-height: 28px; font-variant-numeric: tabular-nums; }
+  .ly-bullets .txt { font-family: var(--sans); font-weight: 300; line-height: 1.375; color: color-mix(in srgb, var(--ink) 85%, transparent); }
+
+  /* chapter */
+  .ly-chapter { display: flex; flex-direction: column; gap: 20px; max-width: 896px; }
+  .ly-chapter .kicker { font-family: var(--serif); font-size: 140px; font-weight: 300; line-height: 0.9; }
+  .ly-chapter h2 { font-family: var(--serif); font-size: 60px; font-weight: 300; line-height: 1.05; }
+  .ly-chapter .sub { max-width: 672px; font-family: var(--sans); font-size: 20px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* imageFull */
+  .ly-imagefull { position: absolute; inset: 0; }
+  .ly-imagefull .img, .ly-imagefull .img-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ly-imagefull .img { object-fit: cover; }
+  .ly-imagefull .img-fallback { background: var(--foreground-primary); }
+  .ly-imagefull .scrim {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 66.6667%;
+    background: linear-gradient(to top, color-mix(in srgb, var(--foreground-secondary) 85%, transparent), color-mix(in srgb, var(--foreground-secondary) 40%, transparent) 50%, transparent);
+  }
+  .ly-imagefull .text { position: absolute; bottom: 64px; left: 64px; max-width: 840px; }
+  .ly-imagefull h1 { font-family: var(--serif); font-size: 60px; font-weight: 300; line-height: 1.2; color: var(--background-primary); }
+  .ly-imagefull .sub { margin-top: 20px; max-width: 672px; font-family: var(--sans); font-size: 20px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--background-primary) 80%, transparent); }
+
+  /* grid */
+  .ly-grid { display: flex; width: 100%; flex-direction: column; gap: 40px; }
+  .ly-grid h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.2; }
+  .ly-grid .cards { display: grid; gap: 16px; }
+  .ly-grid .card { display: flex; flex-direction: column; gap: 24px; border-radius: 8px; padding: 28px; }
+  .ly-grid .card .num { font-family: var(--caption); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; letter-spacing: 1.4px; opacity: 0.7; }
+  .ly-grid .card .inner { display: flex; flex-direction: column; gap: 8px; }
+  .ly-grid .card h3 { font-family: var(--serif); font-size: 24px; font-weight: 300; line-height: 1.25; }
+  .ly-grid .card p { font-family: var(--sans); font-size: 14px; font-weight: 400; line-height: 1.625; opacity: 0.85; }
+
+  /* stats */
+  .ly-stats { display: flex; height: 100%; width: 100%; flex-direction: column; }
+  .ly-stats h2 { max-width: 768px; font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-stats .metrics { margin-top: auto; display: grid; align-items: start; gap: 40px; }
+  .ly-stats .metric { display: flex; flex-direction: column; gap: 16px; }
+  .ly-stats .value { font-family: var(--serif); font-size: 96px; font-weight: 300; line-height: 1; }
+  .ly-stats .label { font-family: var(--sans); font-size: 16px; font-weight: 300; line-height: 1.375; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* timeline */
+  .ly-timeline { display: flex; height: 100%; width: 100%; flex-direction: column; }
+  .ly-timeline h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-timeline .track { position: relative; margin: auto 0; }
+  .ly-timeline .rule { position: absolute; left: 0; right: 0; top: 7px; height: 1px; background: color-mix(in srgb, var(--ink) 15%, transparent); }
+  .ly-timeline .milestones { display: grid; gap: 32px; }
+  .ly-timeline .milestone { display: flex; flex-direction: column; gap: 12px; }
+  .ly-timeline .dot { height: 14px; width: 14px; border-radius: 9999px; }
+  .ly-timeline .label { font-family: var(--caption); font-size: 12px; line-height: 16px; text-transform: uppercase; letter-spacing: 1.6px; color: color-mix(in srgb, var(--ink) 50%, transparent); }
+  .ly-timeline h3 { font-family: var(--serif); font-size: 24px; font-weight: 300; line-height: 1.25; }
+  .ly-timeline p { font-family: var(--sans); font-size: 14px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* contentImage */
+  .ly-contentimage { display: flex; width: 100%; align-items: center; gap: 48px; }
+  .ly-contentimage .text { display: flex; flex: 1 1 0%; flex-direction: column; gap: 24px; padding-right: 32px; }
+  .ly-contentimage h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-contentimage .bodytext { font-family: var(--sans); font-size: 20px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+  .ly-contentimage .media { aspect-ratio: 4 / 3; width: 44%; flex-shrink: 0; overflow: hidden; border-radius: 12px; background: var(--background-secondary); }
+  .ly-contentimage .media img { height: 100%; width: 100%; object-fit: cover; }
+
+  /* twoColumnDetail */
+  .ly-twocol { display: flex; width: 100%; align-items: flex-start; gap: 64px; }
+  .ly-twocol .lead { width: 38%; flex-shrink: 0; }
+  .ly-twocol h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-twocol .intro { margin-top: 24px; max-width: 448px; font-family: var(--sans); font-size: 16px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+  .ly-twocol .blocks { display: grid; flex: 1 1 0%; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 48px; row-gap: 56px; }
+  .ly-twocol h3 { font-family: var(--serif); font-size: 24px; font-weight: 300; line-height: 1.25; }
+  .ly-twocol .blocks p { margin-top: 16px; font-family: var(--sans); font-size: 16px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* feature */
+  .ly-feature { display: flex; width: 100%; align-items: center; gap: 48px; }
+  .ly-feature .lead { display: flex; width: 24%; flex-shrink: 0; flex-direction: column; gap: 24px; }
+  .ly-feature h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.05; }
+  .ly-feature .intro { font-family: var(--sans); font-size: 16px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+  .ly-feature .center { display: flex; flex: 1 1 0%; justify-content: center; }
+  .ly-feature .imgzone { flex-shrink: 0; overflow: hidden; border-radius: 12px; background: var(--background-secondary); }
+  .ly-feature .imgzone.portrait { height: 470px; aspect-ratio: 3 / 4; }
+  .ly-feature .imgzone.landscape { height: 300px; aspect-ratio: 16 / 10; }
+  .ly-feature .imgzone.square { height: 430px; aspect-ratio: 1 / 1; }
+  .ly-feature .imgzone img { height: 100%; width: 100%; object-fit: cover; }
+  .ly-feature .notes { display: flex; width: 24%; flex-shrink: 0; flex-direction: column; gap: 28px; align-self: flex-end; padding-bottom: 4px; }
+  .ly-feature h3 { font-family: var(--serif); font-size: 20px; font-weight: 300; line-height: 1.25; }
+  .ly-feature .notes p { margin-top: 8px; font-family: var(--sans); font-size: 14px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+
+  /* industry */
+  .ly-industry { display: flex; width: 100%; align-items: stretch; gap: 48px; }
+  .ly-industry .lead { display: flex; flex: 1 1 0%; flex-direction: column; gap: 24px; }
+  .ly-industry .head { display: flex; flex-direction: column; gap: 16px; }
+  .ly-industry h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-industry .sub { max-width: 672px; font-family: var(--serif); font-size: 30px; font-weight: 300; line-height: 1.2; color: color-mix(in srgb, var(--ink) 40%, transparent); }
+  .ly-industry .cols { margin-top: 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+  .ly-industry .cols p { font-family: var(--sans); font-size: 16px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+  .ly-industry .logos { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 32px; padding-top: 24px; }
+  .ly-industry .logos img { height: 32px; width: auto; object-fit: contain; }
+  .ly-industry .media { height: 456px; width: 38%; flex-shrink: 0; overflow: hidden; border-radius: 12px; background: var(--background-secondary); }
+  .ly-industry .media img { height: 100%; width: 100%; object-fit: cover; }
+
+  /* quote */
+  .ly-quote { max-width: 896px; }
+  .ly-quote .mark { display: block; margin-bottom: 32px; font-family: var(--serif); font-size: 72px; line-height: 1; }
+  .ly-quote .quote { font-family: var(--serif); font-size: 36px; font-weight: 300; line-height: 1.25; }
+  .ly-quote .attr { margin-top: 32px; font-family: var(--caption); font-size: 12px; line-height: 16px; text-transform: uppercase; letter-spacing: 1.6px; color: color-mix(in srgb, var(--ink) 45%, transparent); }
+
+  /* agenda (self-composed full frame) */
+  .ly-agenda { position: absolute; inset: 0; }
+  .ly-agenda h2 { position: absolute; left: 64px; top: 48px; font-family: var(--serif); font-size: 72px; font-weight: 300; line-height: 1.02; color: var(--ink); }
+  .ly-agenda .items { position: absolute; top: 56px; bottom: 56px; right: 64px; display: flex; width: 52%; flex-direction: column; justify-content: flex-start; gap: 56px; }
+  .ly-agenda .row { display: grid; grid-template-columns: 76px 1fr; align-items: baseline; gap: 24px; }
+  .ly-agenda .part { padding-top: 6px; font-family: var(--caption); font-size: 12px; line-height: 16px; text-transform: uppercase; letter-spacing: 1.6px; color: color-mix(in srgb, var(--ink) 40%, transparent); }
+  .ly-agenda .content { display: flex; flex-direction: column; gap: 6px; }
+  .ly-agenda h3 { font-family: var(--serif); font-size: 32px; font-weight: 300; line-height: 1.1; color: var(--ink); }
+  .ly-agenda .content p { font-family: var(--sans); font-size: 16px; font-weight: 300; line-height: 1.375; color: color-mix(in srgb, var(--ink) 55%, transparent); }
+
+  /* logoWall */
+  .ly-logowall { display: flex; height: 100%; width: 100%; flex-direction: column; }
+  .ly-logowall .head { display: flex; flex-direction: column; gap: 16px; }
+  .ly-logowall h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-logowall .sub { max-width: 672px; font-family: var(--serif); font-size: 30px; font-weight: 300; line-height: 1.2; color: color-mix(in srgb, var(--ink) 40%, transparent); }
+  .ly-logowall .grid { margin-top: auto; display: grid; width: 100%; align-items: center; column-gap: 48px; row-gap: 56px; }
+  .ly-logowall .cell { display: flex; align-items: center; justify-content: flex-start; }
+  .ly-logowall .cell img { max-height: 64px; width: auto; max-width: 100%; object-fit: contain; height: auto; }
+
+  /* textColumns */
+  .ly-textcols { display: flex; width: 100%; flex-direction: column; gap: 48px; }
+  .ly-textcols h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-textcols .cols { display: grid; column-gap: 48px; row-gap: 32px; }
+  .ly-textcols .cols p { font-family: var(--sans); font-size: 18px; font-weight: 300; line-height: 1.625; color: color-mix(in srgb, var(--ink) 80%, transparent); }
+
+  /* chart */
+  .ly-chart { display: flex; height: 100%; width: 100%; flex-direction: column; }
+  .ly-chart h2 { font-family: var(--serif); font-size: 48px; font-weight: 300; line-height: 1.1; }
+  .ly-chart .data { margin-top: 24px; min-height: 0; width: 100%; flex: 1 1 0%; }
+  .ly-chart .data svg { height: 100%; width: 100%; font-family: var(--sans); color: var(--ink); }
+  .ly-chart .source { margin-top: 12px; align-self: flex-end; font-family: var(--sans); font-size: 14px; line-height: 20px; font-weight: 300; color: color-mix(in srgb, var(--ink) 45%, transparent); }
+
+  /* slide background figures (SlideFigure.tsx — static rose/honeycomb only) */
+  .slide-figure { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .slide-figure .pos { position: absolute; right: -40%; top: 50%; height: 165%; width: 125%; transform: translateY(-50%); opacity: 0.6; }
+
+  /* ── Viewer (DeckViewer.tsx) ─────────────────────────────────────────── */
+  .viewer { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--foreground-secondary); }
+  .stage-wrap { position: relative; overflow: hidden; }
+  .stage-wrap.boxed { border-radius: 16px; box-shadow: 0 40px 120px -40px rgba(0,0,0,0.6); }
+  .stage { transform-origin: top left; }
+  @keyframes deck-slide-fade { from { opacity: 0; } to { opacity: 1; } }
+  .stage.entering { animation: deck-slide-fade 0.5s ease both; }
+  @media (prefers-reduced-motion: reduce) { .stage.entering { animation-duration: 0.01s; } }
+  .nav-zone { position: absolute; top: 0; bottom: 0; width: 33.3333%; }
+  .nav-zone.prev { left: 0; } .nav-zone.next { right: 0; }
+  .indicator {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    font-family: var(--caption); font-size: 11px; text-transform: uppercase; letter-spacing: 1.6px;
+    color: color-mix(in srgb, var(--background-primary) 60%, transparent);
+  }
+
+  /* ── Drop zone (no deck loaded) ──────────────────────────────────────── */
+  .dropzone { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--background-primary); color: var(--foreground-primary); }
+  .drop-card { display: flex; flex-direction: column; align-items: center; gap: 20px; max-width: 440px; padding: 56px 48px; text-align: center; border: 1px dashed rgb(6 20 27 / 0.25); border-radius: 12px; }
+  .dropzone.over .drop-card { border-color: var(--accent-teal); background: #fff; }
+  .drop-card img { height: 40px; }
+  .drop-card h1 { font-family: var(--serif); font-size: 32px; font-weight: 300; line-height: 1.2; }
+  .drop-card p { font-family: var(--sans); font-size: 14px; font-weight: 300; line-height: 1.625; color: rgb(6 20 27 / 0.7); }
+  .drop-card .err { color: var(--accent-orange); }
+  .drop-card label {
+    font-family: var(--caption); font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase;
+    padding: 10px 20px; border: 1px solid rgb(6 20 27 / 0.3); border-radius: 9999px; cursor: pointer;
+  }
+  .drop-card input { display: none; }
+
+  /* ── Print: every slide, one page each (deck-builder.css) ────────────── */
+  .print-deck { position: absolute; left: -20000px; top: 0; }
+  @media print {
+    body { background: #fff; overflow: visible; }
+    .viewer, .dropzone { display: none !important; }
+    .print-deck { position: static; }
+    .print-deck .slide-frame { box-shadow: none !important; border: none !important; break-after: page; page-break-after: always; }
+    .print-deck .slide-frame:last-child { break-after: auto; page-break-after: auto; }
+    @page { size: 1280px 720px; margin: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="viewer" id="viewer" hidden>
+  <div class="stage-wrap" id="stageWrap"><div class="stage" id="stage"></div></div>
+  <button class="nav-zone prev" aria-label="Previous"></button>
+  <button class="nav-zone next" aria-label="Next"></button>
+  <p class="indicator" id="indicator"></p>
+</div>
+
+<div class="dropzone" id="dropzone" hidden>
+  <div class="drop-card">
+    <img src="../../brand/assets/logos/symbol.svg" alt="Tribe AI" />
+    <h1>Tribe deck viewer</h1>
+    <p>Drop a <strong>deck.json</strong> here (or pick one) — or open this file with a <code>#&lt;hash&gt;</code> from <code>encode-deck.mjs</code>.</p>
+    <p class="err" id="dropError" hidden></p>
+    <label>Choose deck.json<input type="file" id="filePick" accept=".json,application/json" /></label>
+  </div>
+</div>
+
+<div class="print-deck" id="printDeck"></div>
+
+<script>
+"use strict";
+/* ════════════════════════════════════════════════════════════════════════
+   Data — mirrors of deck-config.ts / share.ts
+   ════════════════════════════════════════════════════════════════════════ */
+const DEFAULT_DECK = {
+  name: "Untitled deck", background: "paper", eyebrow: "Tribe AI",
+  deckTitle: "", footer: "Tribe AI — Confidential",
+  showFooterLine: true, showPageNumbers: true, showLogo: false,
+};
+// SLIDE_BACKGROUNDS (deck-config.ts): surface hex + optional fg ink override.
+const BG = { paper:"#FAFAF8", soft:"#F4F4F2", white:"#FFFFFF", sand:"#EBEBE2", dark:"#06141B",
+             cyan:"#65D9EE", teal:"#0A99C3", ocean:"#0D4E6E", orange:"#FF7C0F", yellow:"#FEDE59", brown:"#AD5913" };
+const FG = { dark:"#FAFAF8", teal:"#FAFAF8", ocean:"#FAFAF8", brown:"#FAFAF8" };
+
+const ACCENTS = {
+  teal:   { fill: "var(--accent-teal)",   contrast: "var(--accent-teal-contrast)" },
+  brown:  { fill: "var(--accent-brown)",  contrast: "var(--accent-brown-contrast)" },
+  orange: { fill: "var(--accent-orange)", contrast: "var(--accent-orange-contrast)" },
+  yellow: { fill: "var(--accent-yellow)", contrast: "var(--accent-yellow-contrast)" },
+  ocean:  { fill: "var(--accent-ocean)",  contrast: "var(--accent-ocean-contrast)" },
+};
+const CYCLE = ["teal", "brown", "orange", "yellow"];
+const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
+const roman = (n) => ROMAN[n - 1] ?? String(n);
+const accent = (name) => ACCENTS[name] ?? ACCENTS.teal;
+
+// Layout groups (SlideFrame.tsx)
+const TOP_ALIGNED = new Set(["bullets","grid","stats","timeline","twoColumnDetail","industry","logoWall","chart","textColumns"]);
+const FILL = new Set(["stats","logoWall","chart","timeline"]);
+
+// Asset paths (relative to this file)
+const LOGO_SYMBOL = "../../brand/assets/logos/symbol.svg";
+const LOGO_SYMBOL_INV = "../../brand/assets/logos/symbol-inverted.svg";
+const LOGO_WORDMARK = "../../brand/assets/logos/wordmark.svg";
+
+/* ── helpers ── */
+const esc = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const clampCols = (n, max = 5) => Math.min(Math.max(n ?? 1, 1), max);
+const gridCols = (n) => `grid-template-columns: repeat(${n}, minmax(0, 1fr));`;
+const pad2 = (n) => String(n).padStart(2, "0");
+const b64decode = (str) => decodeURIComponent(escape(atob(str)));
+const b64encode = (str) => btoa(unescape(encodeURIComponent(str)));
+
+/* ════════════════════════════════════════════════════════════════════════
+   Cover figure — the exact vector layers CoverFigure.tsx composes
+   (Figma cover node 9144:29432; positions/rotations ported verbatim; the
+   empty "base disk" layer renders nothing on the site and is omitted).
+   ════════════════════════════════════════════════════════════════════════ */
+const SVG_OPEN = (vb) => `<svg preserveAspectRatio="none" viewBox="${vb}" fill="none" xmlns="http://www.w3.org/2000/svg" overflow="visible">`;
+const COVER_SPOKES = SVG_OPEN("0 0 3221.81 3211") + `
+<path d="M0.000140348 1605.48H3221.81" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M87.2813 1082.5L3134.51 2128.58" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M339.694 616.071L2882.11 2594.97" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M729.857 256.919L2491.99 2954.08" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M1215.42 43.8287L2006.37 3167.07" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M1743.96 0.0825929L1477.85 3210.92" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M2257.99 130.262L963.831 3080.74" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M2701.95 420.372L519.879 2790.72" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M3027.66 838.798L194.175 2372.18" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M3199.87 1340.33L21.9571 1870.62" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M3199.87 1870.62L21.9571 1340.33" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M3027.66 2372.18L194.175 838.798" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M2701.95 2790.72L519.879 420.372" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M2257.99 3080.74L963.831 130.262" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M1743.96 3210.92L1477.85 0.0825929" stroke="#C7BDB2" stroke-width="2"/>
+<path d="M1215.42 3167.07L2006.37 43.8287" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M729.857 2954.08L2491.99 256.919" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M339.694 2594.97L2882.11 616.071" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+<path d="M87.2813 2128.58L3134.51 1082.5" stroke="#C7BDB2" stroke-opacity="0.5" stroke-width="2"/>
+</svg>`;
+const COVER_RING1 = SVG_OPEN("0 0 3422 3422") +
+`<path d="M1711 3372C2628.35 3372 3372 2628.34 3372 1711C3372 793.655 2628.35 50 1711 50C793.655 50 50 793.655 50 1711C50 2628.34 793.655 3372 1711 3372Z" stroke="#C7BDB2" stroke-width="100" stroke-dasharray="2 16"/></svg>`;
+const COVER_RING2 = SVG_OPEN("0 0 2660.86 2660.86") +
+`<path d="M1330.43 2659.86C2064.65 2659.86 2659.86 2064.65 2659.86 1330.43C2659.86 596.206 2064.65 1 1330.43 1C596.206 1 1 596.206 1 1330.43C1 2064.65 596.206 2659.86 1330.43 2659.86Z" stroke="#C7BDB2" stroke-width="2"/></svg>`;
+const COVER_RING3 = SVG_OPEN("0 0 3224 3224") +
+`<path d="M1612 3223C2501.73 3223 3223 2501.73 3223 1612C3223 722.269 2501.73 1 1612 1C722.269 1 1 722.269 1 1612C1 2501.73 722.269 3223 1612 3223Z" stroke="#C7BDB2" stroke-width="2"/></svg>`;
+const COVER_DOTS = SVG_OPEN("0 0 1615.62 1611.5") + `<g style="mix-blend-mode:multiply">
+<path d="M1535.83 1000.71C1535.83 1016.17 1548.37 1028.71 1563.83 1028.71C1579.29 1028.71 1591.83 1016.17 1591.83 1000.71C1591.83 985.243 1579.29 972.707 1563.83 972.707C1548.37 972.707 1535.83 985.243 1535.83 1000.71Z" fill="#C7BDB2"/>
+<path d="M1253.68 1423.27C1253.68 1438.74 1266.22 1451.27 1281.68 1451.27C1297.15 1451.27 1309.68 1438.74 1309.68 1423.27C1309.68 1407.81 1297.15 1395.27 1281.68 1395.27C1266.22 1395.27 1253.68 1407.81 1253.68 1423.27Z" fill="#C7BDB2"/>
+<path d="M771.408 1583.5C771.408 1598.96 783.944 1611.5 799.408 1611.5C814.872 1611.5 827.408 1598.96 827.408 1583.5C827.408 1568.04 814.872 1555.5 799.408 1555.5C783.944 1555.5 771.408 1568.04 771.408 1583.5Z" fill="#FF7C0F" fill-opacity="0.933333"/>
+<path d="M292.457 1413.81C292.457 1429.27 304.993 1441.81 320.457 1441.81C335.921 1441.81 348.457 1429.27 348.457 1413.81C348.457 1398.34 335.921 1385.81 320.457 1385.81C304.993 1385.81 292.457 1398.34 292.457 1413.81Z" fill="#65D9EE"/>
+<path d="M18.7335 985.59C18.7335 1001.05 31.2695 1013.59 46.7335 1013.59C62.1975 1013.59 74.7335 1001.05 74.7335 985.59C74.7335 970.126 62.1975 957.59 46.7335 957.59C31.2695 957.59 18.7335 970.126 18.7335 985.59Z" fill="#C7BDB2"/>
+<path d="M65.7217 479.633C65.7217 495.097 78.2577 507.633 93.7217 507.633C109.186 507.633 121.722 495.097 121.722 479.633C121.722 464.169 109.186 451.633 93.7217 451.633C78.2577 451.633 65.7217 464.169 65.7217 479.633Z" fill="#C7BDB2"/>
+<path d="M413.604 109.141C413.604 124.605 426.141 137.141 441.604 137.141C457.068 137.141 469.604 124.605 469.604 109.141C469.604 93.6767 457.068 81.1406 441.604 81.1406C426.141 81.1407 413.604 93.6767 413.604 109.141Z" fill="#C7BDB2"/>
+<path d="M915.628 30.5195C915.628 45.9835 928.164 58.5195 943.628 58.5195C959.092 58.5195 971.628 45.9835 971.628 30.5195C971.628 15.0556 959.092 2.51951 943.628 2.51951C928.164 2.51951 915.628 15.0556 915.628 30.5195Z" fill="#C7BDB2"/>
+<path d="M1360.13 276.785C1360.13 292.249 1372.66 304.785 1388.13 304.785C1403.59 304.785 1416.13 292.249 1416.13 276.785C1416.13 261.321 1403.59 248.785 1388.13 248.785C1372.66 248.785 1360.13 261.321 1360.13 276.785Z" fill="#C7BDB2"/>
+<path d="M1559.62 744.152C1559.62 759.616 1572.16 772.152 1587.62 772.152C1603.09 772.152 1615.62 759.616 1615.62 744.152C1615.62 728.688 1603.09 716.152 1587.62 716.152C1572.16 716.152 1559.62 728.688 1559.62 744.152Z" fill="#C7BDB2"/>
+<path d="M1430 1235.54C1430 1251 1442.53 1263.54 1458 1263.54C1473.46 1263.54 1486 1251 1486 1235.54C1486 1220.08 1473.46 1207.54 1458 1207.54C1442.53 1207.54 1430 1220.08 1430 1235.54Z" fill="#C7BDB2"/>
+<path d="M1027.46 1542.17C1027.46 1557.63 1039.99 1570.17 1055.46 1570.17C1070.92 1570.17 1083.46 1557.63 1083.46 1542.17C1083.46 1526.7 1070.92 1514.17 1055.46 1514.17C1039.99 1514.17 1027.46 1526.7 1027.46 1542.17Z" fill="#AD5913"/>
+<path d="M517.78 1538.58C517.78 1554.04 530.316 1566.58 545.78 1566.58C561.244 1566.58 573.78 1554.04 573.78 1538.58C573.78 1523.11 561.244 1510.58 545.78 1510.58C530.316 1510.58 517.78 1523.11 517.78 1538.58Z" fill="#FEDE59"/>
+<path d="M119.851 1222.47C119.851 1237.93 132.387 1250.47 147.851 1250.47C163.315 1250.47 175.851 1237.93 175.851 1222.47C175.851 1207 163.315 1194.47 147.851 1194.47C132.387 1194.47 119.851 1207 119.851 1222.47Z" fill="#C7BDB2"/>
+<path d="M6.47069e-05 728.703C6.67348e-05 744.167 12.5361 756.703 28.0001 756.703C43.464 756.703 56.0001 744.167 56.0001 728.703C56.0001 713.239 43.464 700.703 28.0001 700.703C12.5361 700.703 6.26791e-05 713.239 6.47069e-05 728.703Z" fill="#C7BDB2"/>
+<path d="M208.752 265.289C208.752 280.753 221.288 293.289 236.752 293.289C252.216 293.289 264.752 280.753 264.752 265.289C264.752 249.825 252.216 237.289 236.752 237.289C221.288 237.289 208.752 249.825 208.752 265.289Z" fill="#C7BDB2"/>
+<path d="M658.072 28C658.072 43.464 670.608 56 686.072 56C701.536 56 714.072 43.464 714.072 28C714.072 12.5361 701.536 -2.02786e-06 686.072 0C670.608 2.02785e-06 658.072 12.5361 658.072 28Z" fill="#C7BDB2"/>
+<path d="M1158.46 116.559C1158.46 132.023 1171 144.559 1186.46 144.559C1201.92 144.559 1214.46 132.023 1214.46 116.559C1214.46 101.095 1201.92 88.5585 1186.46 88.5585C1171 88.5586 1158.46 101.095 1158.46 116.559Z" fill="#C7BDB2"/>
+<path d="M1498.87 493.863C1498.87 509.327 1511.41 521.863 1526.87 521.863C1542.33 521.863 1554.87 509.327 1554.87 493.863C1554.87 478.399 1542.33 465.863 1526.87 465.863C1511.41 465.863 1498.87 478.399 1498.87 493.863Z" fill="#C7BDB2"/>
+</g></svg>`;
+
+const F = 1280 / 3840; // Figma frame px → cover px (CoverFigure.tsx)
+const coverFigureHTML = () => {
+  const layer = (svg, pos, extra = "") =>
+    `<div class="layer ${extra}" style="${pos}">${svg}</div>`;
+  return `<div class="cover-figure" aria-hidden="true">` +
+    layer(COVER_SPOKES, "top:-8.61%;right:-31.3%;bottom:-40.04%;left:47.4%", "r180") +
+    layer(COVER_RING1, "top:-11.2%;right:-32.6%;bottom:-42.59%;left:46.09%", "r180") +
+    layer(COVER_RING2, "top:4.17%;right:-23.97%;bottom:-27.27%;left:54.73%", "r180") +
+    layer(COVER_RING3, "top:-8.89%;right:-31.3%;bottom:-40.28%;left:47.4%", "r180") +
+    layer(COVER_DOTS, `top:${(808.67 * F).toFixed(2)}px;left:48.59%;right:9.34%;height:${(1611.5 * F).toFixed(2)}px`, "r180 multiply") +
+  `</div>`;
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   Chart (BarChart.tsx) — bar / paired / line, pure SVG
+   ════════════════════════════════════════════════════════════════════════ */
+function chartSVG(type, data) {
+  const W = 1140, H = 400, PAD_X = 12, PAD_TOP = 36, PAD_BOTTOM = 34;
+  const TEAL = "var(--accent-teal)", ORANGE = "var(--accent-orange)";
+  const num = (s) => Number(String(s ?? "").replace(/[^0-9.-]/g, "")) || 0;
+  const chartH = H - PAD_TOP - PAD_BOTTOM;
+  const baseY = H - PAD_BOTTOM;
+  const n = Math.max(data.length, 1);
+  const slot = (W - PAD_X * 2) / n;
+  const hasB = type !== "bar" && data.some((d) => d.b !== undefined && d.b !== "");
+  const all = data.flatMap((d) => (hasB ? [num(d.a), num(d.b)] : [num(d.a)]));
+  const max = Math.max(...all, 1);
+  const y = (v) => baseY - (v / max) * chartH;
+  const cx = (i) => PAD_X + slot * i + slot / 2;
+  const vLabel = (x, v, label) => label
+    ? `<text x="${x}" y="${y(v) - 12}" text-anchor="middle" font-size="18" font-weight="500" fill="currentColor">${esc(label)}</text>` : "";
+
+  let marks = "";
+  if (type === "line") {
+    marks += `<polyline points="${data.map((d, i) => `${cx(i)},${y(num(d.a))}`).join(" ")}" fill="none" stroke="${TEAL}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (hasB) marks += `<polyline points="${data.map((d, i) => `${cx(i)},${y(num(d.b))}`).join(" ")}" fill="none" stroke="${ORANGE}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+    data.forEach((d, i) => {
+      marks += `<circle cx="${cx(i)}" cy="${y(num(d.a))}" r="7" fill="${TEAL}"/>` + vLabel(cx(i), num(d.a), d.a);
+      if (hasB) marks += `<circle cx="${cx(i)}" cy="${y(num(d.b))}" r="7" fill="${ORANGE}"/>` + vLabel(cx(i), num(d.b), d.b ?? "");
+    });
+  } else if (type === "paired" && hasB) {
+    data.forEach((d, i) => {
+      const bw = Math.min(slot * 0.3, 84), gap = Math.min(slot * 0.06, 12);
+      const xa = cx(i) - bw - gap / 2, xb = cx(i) + gap / 2;
+      marks += `<rect x="${xa}" y="${y(num(d.a))}" width="${bw}" height="${baseY - y(num(d.a))}" fill="${TEAL}"/>`
+             + `<rect x="${xb}" y="${y(num(d.b))}" width="${bw}" height="${baseY - y(num(d.b))}" fill="${ORANGE}"/>`
+             + vLabel(xa + bw / 2, num(d.a), d.a) + vLabel(xb + bw / 2, num(d.b), d.b ?? "");
+    });
+  } else {
+    data.forEach((d, i) => {
+      const bw = Math.min(slot * 0.46, 128), x = cx(i) - bw / 2;
+      marks += `<rect x="${x}" y="${y(num(d.a))}" width="${bw}" height="${baseY - y(num(d.a))}" fill="${d.highlight ? ORANGE : TEAL}"/>`
+             + vLabel(cx(i), num(d.a), d.a);
+    });
+  }
+  const cats = data.map((d, i) => d.label
+    ? `<text x="${cx(i)}" y="${baseY + 26}" text-anchor="middle" font-size="14" fill="currentColor" opacity="0.5">${esc(d.label)}</text>` : "").join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+<line x1="${PAD_X}" y1="${baseY}" x2="${W - PAD_X}" y2="${baseY}" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5"/>
+${marks}${cats}</svg>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Slide background figures (SlideFigure.tsx) — static SVG approximations.
+   rose / honeycomb are the two figures the site itself renders statically
+   (thumbnails/print); the canvas figures (orbit/sphere/symbol/whatWeDo/
+   partners) are live-only on the site and render NOTHING here.
+   Geometry ported from lissajous.tsx (viewBox 100, padding 8 → amplitude 42).
+   ════════════════════════════════════════════════════════════════════════ */
+function lissajousPath(shape) {
+  const CENTER = 50, TAU = Math.PI * 2, amplitude = 42, samples = 512;
+  const toPath = (pts) => {
+    let d = "";
+    pts.forEach((p, i) => { d += `${i === 0 ? "M" : "L"}${p[0].toFixed(2)} ${p[1].toFixed(2)} `; });
+    return d.trim() + " Z";
+  };
+  if (shape === "rose") { // rosePoints(k=3)
+    const pts = [];
+    for (let i = 0; i <= samples; i++) {
+      const t = (i / samples) * TAU, r = Math.cos(3 * t) * amplitude;
+      pts.push([CENTER + Math.cos(t) * r, CENTER + Math.sin(t) * r]);
+    }
+    return toPath(pts);
+  }
+  // honeycomb: rings=3 hexagon cluster (honeycombPolylines)
+  const N = 3;
+  const s = Math.min(amplitude / (1.5 * N + 1), amplitude / (Math.sqrt(3) * (N + 0.5)));
+  const perEdge = Math.max(8, Math.round(samples / 36));
+  const cells = [];
+  for (let q = -N; q <= N; q++) {
+    for (let r = Math.max(-N, -q - N); r <= Math.min(N, -q + N); r++) {
+      cells.push({ cx: CENTER + s * Math.sqrt(3) * (q + r / 2), cy: CENTER + s * 1.5 * r });
+    }
+  }
+  cells.sort((a, b) => b.cy - a.cy || a.cx - b.cx);
+  const hexCell = (cx, cy) => {
+    const corners = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = (Math.PI / 180) * (-90 + 60 * i);
+      corners.push([cx + s * Math.cos(ang), cy + s * Math.sin(ang)]);
+    }
+    const pts = [];
+    for (let e = 0; e < 6; e++) {
+      const [x0, y0] = corners[e], [x1, y1] = corners[(e + 1) % 6];
+      for (let j = 0; j < perEdge; j++) {
+        const f = j / perEdge;
+        pts.push([x0 + (x1 - x0) * f, y0 + (y1 - y0) * f]);
+      }
+    }
+    pts.push(corners[0]);
+    return pts;
+  };
+  return cells.map((c) => toPath(hexCell(c.cx, c.cy))).join(" ");
+}
+function slideFigureHTML(kind) {
+  const spec = kind === "rose" ? { color: "var(--accent-teal)" }
+             : kind === "honeycomb" ? { color: "var(--accent-brown)" } : null;
+  if (!spec) return ""; // canvas figures: live-only on the site → nothing here
+  return `<div class="slide-figure" aria-hidden="true"><div class="pos">
+<svg width="560" height="560" viewBox="0 0 100 100" fill="none">
+<path d="${lissajousPath(kind)}" stroke="${spec.color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+</svg></div></div>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Layout renderers (SlideRenderer.tsx, ported per-layout)
+   ════════════════════════════════════════════════════════════════════════ */
+function renderBody(slide) {
+  const acc = accent(slide.accent ?? "teal").fill;
+
+  switch (slide.layout) {
+    case "cover": {
+      const partner = slide.partnerLogoUrl
+        ? `<span class="x">×</span><img class="partner" src="${esc(slide.partnerLogoUrl)}" alt="Partner" />` : "";
+      return `<div class="ly-cover">
+${coverFigureHTML()}
+<div class="cover-lockup">
+  <span class="pair"><img class="symbol" src="${LOGO_SYMBOL}" alt="Tribe AI" /><img class="wordmark" src="${LOGO_WORDMARK}" alt="Tribe AI" /></span>
+  ${partner}
+</div>
+<div class="cover-text">
+  ${slide.title ? `<h1 class="pre-line balance">${esc(slide.title)}</h1>` : ""}
+  ${slide.date ? `<p class="date">${esc(slide.date)}</p>` : ""}
+</div></div>`;
+    }
+
+    case "title":
+      return `<div class="ly-title">
+${slide.title ? `<h1 class="balance pre-line">${esc(slide.title)}</h1>` : ""}
+${slide.subtitle ? `<p class="sub pretty">${esc(slide.subtitle)}</p>` : ""}</div>`;
+
+    case "statement":
+      return `<div class="ly-statement">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${slide.body ? `<p class="support pretty">${esc(slide.body)}</p>` : ""}</div>`;
+
+    case "bullets": {
+      const cols = clampCols(slide.columns);
+      const size = cols >= 3 ? "font-size:18px" : cols === 2 ? "font-size:20px" : "font-size:24px";
+      const items = (slide.bullets ?? []).map((b, i) => `<li>
+<span class="num" style="color:${acc}">${pad2(i + 1)}</span>
+<span class="txt" style="${size}">${esc(b)}</span></li>`).join("");
+      return `<div class="ly-bullets">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${items ? `<ul style="${gridCols(cols)}">${items}</ul>` : ""}</div>`;
+    }
+
+    case "chapter":
+      return `<div class="ly-chapter">
+${slide.kicker ? `<span class="kicker" style="color:${acc}">${esc(slide.kicker)}</span>` : ""}
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${slide.subtitle ? `<p class="sub pretty">${esc(slide.subtitle)}</p>` : ""}</div>`;
+
+    case "imageFull":
+      return `<div class="ly-imagefull">
+${slide.imageUrl ? `<img class="img" src="${esc(slide.imageUrl)}" alt="" />` : `<div class="img-fallback"></div>`}
+<div class="scrim"></div>
+<div class="text">
+${slide.title ? `<h1 class="pre-line balance">${esc(slide.title)}</h1>` : ""}
+${slide.subtitle ? `<p class="sub pretty">${esc(slide.subtitle)}</p>` : ""}</div></div>`;
+
+    case "grid": {
+      const items = slide.items ?? [];
+      const cols = clampCols(slide.columns ?? Math.min(items.length || 1, 3));
+      const cards = items.map((it, i) => {
+        const a = accent(CYCLE[i % 4]);
+        return `<div class="card" style="background:${a.fill};color:${a.contrast}">
+<span class="num">${pad2(i + 1)}</span>
+<div class="inner">
+${it.title ? `<h3 class="balance">${esc(it.title)}</h3>` : ""}
+${it.body ? `<p class="pretty">${esc(it.body)}</p>` : ""}</div></div>`;
+      }).join("");
+      return `<div class="ly-grid">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${cards ? `<div class="cards" style="${gridCols(cols)}">${cards}</div>` : ""}</div>`;
+    }
+
+    case "stats": {
+      const items = (slide.items ?? []).slice(0, 4);
+      const metrics = items.map((it, i) => `<div class="metric">
+${it.title ? `<span class="value" style="color:${accent(CYCLE[i % 4]).fill}">${esc(it.title)}</span>` : ""}
+${it.body ? `<span class="label">${esc(it.body)}</span>` : ""}</div>`).join("");
+      return `<div class="ly-stats">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${metrics ? `<div class="metrics" style="grid-template-columns:repeat(${Math.min(items.length, 4)},1fr)">${metrics}</div>` : ""}</div>`;
+    }
+
+    case "timeline": {
+      const items = (slide.items ?? []).slice(0, 5);
+      const marks = items.map((it, i) => `<div class="milestone">
+<span class="dot" style="background:${accent(CYCLE[i % 4]).fill}"></span>
+${it.label ? `<span class="label">${esc(it.label)}</span>` : ""}
+${it.title ? `<h3>${esc(it.title)}</h3>` : ""}
+${it.body ? `<p>${esc(it.body)}</p>` : ""}</div>`).join("");
+      return `<div class="ly-timeline">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${marks ? `<div class="track"><div class="rule"></div>
+<div class="milestones" style="grid-template-columns:repeat(${Math.min(items.length, 5)},1fr)">${marks}</div></div>` : ""}</div>`;
+    }
+
+    case "contentImage": {
+      const text = `<div class="text">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${slide.body ? `<p class="bodytext pretty">${esc(slide.body)}</p>` : ""}</div>`;
+      const media = `<div class="media">${slide.imageUrl ? `<img src="${esc(slide.imageUrl)}" alt="" />` : ""}</div>`;
+      const imageRight = slide.imagePosition !== "left";
+      return `<div class="ly-contentimage">${imageRight ? text + media : media + text}</div>`;
+    }
+
+    case "twoColumnDetail": {
+      const items = slide.items ?? [];
+      const blocks = items.map((it) => `<div>
+${it.title ? `<h3>${esc(it.title)}</h3>` : ""}
+${it.body ? `<p class="pretty">${esc(it.body)}</p>` : ""}</div>`).join("");
+      return `<div class="ly-twocol">
+<div class="lead">
+${slide.title ? `<h2 class="pre-line balance">${esc(slide.title)}</h2>` : ""}
+${slide.body ? `<p class="intro pretty">${esc(slide.body)}</p>` : ""}</div>
+${blocks ? `<div class="blocks">${blocks}</div>` : ""}</div>`;
+    }
+
+    case "feature": {
+      const items = (slide.items ?? []).slice(0, 3);
+      const aspect = ["landscape", "square", "portrait"].includes(slide.imageAspect) ? slide.imageAspect : "portrait";
+      const notes = items.map((it) => `<div>
+${it.title ? `<h3>${esc(it.title)}</h3>` : ""}
+${it.body ? `<p class="pretty">${esc(it.body)}</p>` : ""}</div>`).join("");
+      return `<div class="ly-feature">
+<div class="lead">
+${slide.title ? `<h2 class="pre-line balance">${esc(slide.title)}</h2>` : ""}
+${slide.body ? `<p class="intro pretty">${esc(slide.body)}</p>` : ""}</div>
+<div class="center"><div class="imgzone ${aspect}">${slide.imageUrl ? `<img src="${esc(slide.imageUrl)}" alt="" />` : ""}</div></div>
+${notes ? `<div class="notes">${notes}</div>` : ""}</div>`;
+    }
+
+    case "industry": {
+      const items = (slide.items ?? []).slice(0, 2);
+      const logos = (slide.logos ?? []).filter(Boolean);
+      const head = (slide.title || slide.subtitle) ? `<div class="head">
+${slide.title ? `<h2 class="balance">${esc(slide.title)}</h2>` : ""}
+${slide.subtitle ? `<p class="sub balance">${esc(slide.subtitle)}</p>` : ""}</div>` : "";
+      const cols = items.length ? `<div class="cols">${items.map((it) => `<p class="pretty">${esc(it.body ?? "")}</p>`).join("")}</div>` : "";
+      const logoRow = logos.length ? `<div class="logos">${logos.map((l) => `<img src="${esc(l)}" alt="" />`).join("")}</div>` : "";
+      return `<div class="ly-industry">
+<div class="lead">${head}${cols}${logoRow}</div>
+<div class="media">${slide.imageUrl ? `<img src="${esc(slide.imageUrl)}" alt="" />` : ""}</div></div>`;
+    }
+
+    case "quote":
+      return `<div class="ly-quote">
+<span class="mark" style="color:${acc}">“</span>
+${slide.quote ? `<p class="quote balance pre-line">${esc(slide.quote)}</p>` : ""}
+${slide.attribution ? `<p class="attr">${esc(slide.attribution)}</p>` : ""}</div>`;
+
+    case "agenda": {
+      const items = (slide.items ?? []).slice(0, 6);
+      const rows = items.map((it, i) => `<div class="row">
+<span class="part">Part ${roman(i + 1)}</span>
+<div class="content">
+${it.title ? `<h3 class="pre-line balance">${esc(it.title)}</h3>` : ""}
+${it.body ? `<p class="pretty">${esc(it.body)}</p>` : ""}</div></div>`).join("");
+      return `<div class="ly-agenda">
+${slide.title ? `<h2 class="pre-line">${esc(slide.title)}</h2>` : ""}
+${rows ? `<div class="items">${rows}</div>` : ""}</div>`;
+    }
+
+    case "logoWall": {
+      const logos = (slide.logos ?? []).filter(Boolean);
+      const cols = Math.min(logos.length || 1, 4);
+      const head = (slide.title || slide.subtitle) ? `<div class="head">
+${slide.title ? `<h2 class="balance">${esc(slide.title)}</h2>` : ""}
+${slide.subtitle ? `<p class="sub pretty">${esc(slide.subtitle)}</p>` : ""}</div>` : "";
+      const grid = logos.length ? `<div class="grid" style="grid-template-columns:repeat(${cols},1fr)">${logos.map((l) => `<div class="cell"><img src="${esc(l)}" alt="" /></div>`).join("")}</div>` : "";
+      return `<div class="ly-logowall">${head}${grid}</div>`;
+    }
+
+    case "textColumns": {
+      const cols = clampCols(slide.columns ?? 2, 4);
+      const texts = (slide.bullets ?? []).filter(Boolean);
+      return `<div class="ly-textcols">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+${texts.length ? `<div class="cols" style="${gridCols(cols)}">${texts.map((t) => `<p class="pretty pre-line">${esc(t)}</p>`).join("")}</div>` : ""}</div>`;
+    }
+
+    case "chart": {
+      const type = ["bar", "paired", "line"].includes(slide.chartType) ? slide.chartType : "bar";
+      const data = (slide.items ?? []).slice(0, 8).map((it) => ({ label: it.label, a: it.title ?? "", b: it.body, highlight: it.highlight }));
+      return `<div class="ly-chart">
+${slide.title ? `<h2 class="balance pre-line">${esc(slide.title)}</h2>` : ""}
+<div class="data">${data.length ? chartSVG(type, data) : ""}</div>
+${slide.body ? `<p class="source">${esc(slide.body)}</p>` : ""}</div>`;
+    }
+
+    default:
+      return "";
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Frame (SlideFrame.tsx) — 1280×720 canvas + deck chrome
+   ════════════════════════════════════════════════════════════════════════ */
+function frameHTML(deck, slide, pageNumber, pageCount) {
+  const body = renderBody(slide);
+
+  // Full-bleed layouts: draw their own surface, no chrome.
+  if (slide.layout === "cover" || slide.layout === "imageFull") {
+    return `<div class="slide-frame" style="background-color:var(--background-primary)">${body}</div>`;
+  }
+
+  const hide = slide.hide ?? {};
+  const background = slide.background ?? deck.background;
+  const fg = FG[background];
+  const style = `background-color:${BG[background] ?? BG.paper};${fg ? `--ink:${fg};` : ""}`;
+  const showLogo = hide.logo === undefined ? deck.showLogo : !hide.logo;
+  // On dark-ink surfaces the symbol flips to its inverted cut so it stays visible.
+  const logoSrc = fg ? LOGO_SYMBOL_INV : LOGO_SYMBOL;
+
+  // Self-composed layout: deck surface, logo mark only, no AutoFit.
+  if (slide.layout === "agenda") {
+    return `<div class="slide-frame" style="${style}">${body}
+${showLogo ? `<img class="logo-mark" style="position:absolute;right:64px;top:48px" src="${logoSrc}" alt="Tribe AI" />` : ""}</div>`;
+  }
+
+  const eyebrowText = slide.eyebrow ?? deck.eyebrow;
+  const runningText = slide.runningTitle ?? deck.deckTitle;
+  const showEyebrow = !hide.eyebrow && eyebrowText;
+  const showRunning = !hide.runningTitle && runningText;
+  const showFooter = !hide.footer && deck.footer;
+  const showFooterLine = hide.footerLine === undefined ? (deck.showFooterLine ?? true) : !hide.footerLine;
+  const showPage = !hide.pageNumber && deck.showPageNumbers;
+
+  const figure = slide.figure ? slideFigureHTML(slide.figure) : "";
+  const fitAlign = TOP_ALIGNED.has(slide.layout) ? "top" : "center";
+  const fitFill = FILL.has(slide.layout) ? " fill" : "";
+  const bodyPad = slide.layout === "chart" ? "body-region chart-pad" : "body-region";
+
+  return `<div class="slide-frame" style="${style}">
+${figure}
+<div class="chrome-top">
+  ${showEyebrow ? `<p class="eyebrow">${esc(eyebrowText)}</p>` : "<span></span>"}
+  ${showLogo ? `<img class="logo-mark" src="${logoSrc}" alt="Tribe AI" />`
+    : showRunning ? `<p class="running">${esc(runningText)}</p>` : "<span></span>"}
+</div>
+<div class="${bodyPad}">
+  <div class="fit ${fitAlign}"><div class="fit-inner${fitFill}">${body}</div></div>
+</div>
+<div class="chrome-bottom${showFooterLine ? " ruled" : ""}">
+  ${showFooter ? `<p class="footer-text">${esc(deck.footer)}</p>` : "<span></span>"}
+  ${showPage ? `<p class="page-num">${pad2(pageNumber)} / ${pad2(pageCount)}</p>` : ""}
+</div></div>`;
+}
+
+/* AutoFit pass (AutoFit.tsx): scale DOWN so content never overflows. */
+function runAutoFit(root) {
+  root.querySelectorAll(".fit").forEach((outer) => {
+    const inner = outer.firstElementChild;
+    if (!inner) return;
+    inner.style.transform = "";
+    const availH = outer.clientHeight, availW = outer.clientWidth;
+    const naturalH = inner.scrollHeight, naturalW = inner.scrollWidth;
+    if (!naturalH || !naturalW) return;
+    const s = Math.min(1, availH / naturalH, availW / naturalW);
+    inner.style.transform = `scale(${s > 0 ? s : 1})`;
+    inner.style.transformOrigin = outer.classList.contains("top") ? "top left" : "center";
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Viewer (DeckViewer.tsx) + boot
+   ════════════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+
+function decodeDeckHash(encoded) {
+  try {
+    const parsed = JSON.parse(b64decode(encoded));
+    if (!Array.isArray(parsed.slides) || !parsed.deck) return null;
+    return parsed;
+  } catch { return null; }
+}
+
+const state = { deck: null, slides: [], index: 0 };
+
+function renderStage() {
+  const stage = $("stage");
+  stage.classList.remove("entering");
+  stage.innerHTML = frameHTML(state.deck, state.slides[state.index], state.index + 1, state.slides.length);
+  void stage.offsetWidth; // restart the fade
+  stage.classList.add("entering");
+  runAutoFit(stage);
+  const bare = params.get("bare");
+  $("indicator").textContent = bare ? "" : `${pad2(state.index + 1)} / ${pad2(state.slides.length)}`;
+}
+
+function layoutStage() {
+  const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  const full = 1280 * scale >= window.innerWidth - 1 && 720 * scale >= window.innerHeight - 1;
+  const wrap = $("stageWrap");
+  wrap.style.width = `${1280 * scale}px`;
+  wrap.style.height = `${720 * scale}px`;
+  wrap.classList.toggle("boxed", !full);
+  $("stage").style.transform = `scale(${scale})`;
+}
+
+function go(dir) {
+  const n = Math.max(0, Math.min(state.slides.length - 1, state.index + dir));
+  if (n === state.index) return;
+  state.index = n;
+  renderStage();
+}
+
+async function settleImages(root, timeout = 5000) {
+  const imgs = [...root.querySelectorAll("img")];
+  await Promise.all(imgs.map((img) => img.complete ? null : new Promise((res) => {
+    const t = setTimeout(res, timeout);
+    img.addEventListener("load", () => { clearTimeout(t); res(); }, { once: true });
+    img.addEventListener("error", () => { clearTimeout(t); res(); }, { once: true });
+  })));
+}
+
+function showDropZone(error) {
+  $("dropzone").hidden = false;
+  const err = $("dropError");
+  if (error) { err.hidden = false; err.textContent = error; }
+  const zone = $("dropzone");
+  const load = (text, name) => {
+    try {
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed.slides) || !parsed.slides.length) throw new Error("no slides[]");
+      // Same hash the site's share links use → the URL becomes shareable.
+      location.hash = b64encode(JSON.stringify({ deck: { ...DEFAULT_DECK, ...(parsed.deck ?? {}) }, slides: parsed.slides }));
+      location.reload();
+    } catch (e) {
+      err.hidden = false;
+      err.textContent = `Could not read ${name || "file"}: ${e.message}`;
+    }
+  };
+  $("filePick").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    if (f) f.text().then((t) => load(t, f.name));
+  });
+  zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault(); zone.classList.remove("over");
+    const f = e.dataTransfer.files[0];
+    if (f) f.text().then((t) => load(t, f.name));
+  });
+}
+
+window.__READY__ = (async () => {
+  const hash = location.hash.replace(/^#/, "") || params.get("deck") || "";
+  const payload = hash ? decodeDeckHash(hash) : null;
+
+  if (!payload) {
+    showDropZone(hash ? "That hash didn't decode to a deck — re-encode with encode-deck.mjs." : "");
+    await document.fonts.ready;
+    return;
+  }
+
+  state.deck = { ...DEFAULT_DECK, ...payload.deck };
+  state.slides = payload.slides;
+  const startAt = Number(params.get("slide"));
+  state.index = Number.isFinite(startAt) && startAt >= 1 ? Math.min(startAt - 1, state.slides.length - 1) : 0;
+  document.title = `${state.deck.name || "Deck"} — Tribe`;
+
+  // Print surface: EVERY slide at native 1280×720 (laid out off-screen so
+  // AutoFit can measure; @media print reveals it, one page per slide).
+  $("printDeck").innerHTML = state.slides
+    .map((s, i) => frameHTML(state.deck, s, i + 1, state.slides.length)).join("");
+
+  // Screen viewer
+  $("viewer").hidden = false;
+  layoutStage();
+  renderStage();
+
+  // Fonts + images settle, then the definitive auto-fit pass everywhere.
+  await new Promise((r) => requestAnimationFrame(r));
+  await document.fonts.ready;
+  await settleImages(document);
+  runAutoFit($("printDeck"));
+  runAutoFit($("stage"));
+
+  // Interaction
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") { e.preventDefault(); go(1); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(-1); }
+    else if ((e.key === "p" || e.key === "P") && !e.metaKey && !e.ctrlKey) { e.preventDefault(); window.print(); }
+  });
+  document.querySelector(".nav-zone.next").addEventListener("click", () => go(1));
+  document.querySelector(".nav-zone.prev").addEventListener("click", () => go(-1));
+  window.addEventListener("resize", layoutStage);
+})();
+
+// A new #hash is a new deck — reload in every state (viewer or drop zone).
+window.addEventListener("hashchange", () => location.reload());
+</script>
+</body>
+</html>

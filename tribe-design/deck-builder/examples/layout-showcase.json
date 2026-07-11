@@ -1,0 +1,116 @@
+{
+  "deck": {
+    "name": "Layout showcase",
+    "background": "paper",
+    "eyebrow": "Tribe AI",
+    "deckTitle": "Layout showcase",
+    "footer": "Tribe AI — Internal",
+    "showFooterLine": true,
+    "showPageNumbers": true,
+    "showLogo": false
+  },
+  "slides": [
+    {
+      "layout": "title",
+      "title": "Every layout,\none deck",
+      "subtitle": "The ten layouts the example pitch doesn't use, rendered with realistic copy so the standalone viewer can be checked against the site."
+    },
+    {
+      "layout": "contentImage",
+      "title": "Embedded, not outsourced",
+      "body": "Our practitioners join your standups, your codebase, and your on-call rotation. The work ships inside your stack, and the knowledge stays when we leave.",
+      "imagePosition": "right",
+      "accent": "teal"
+    },
+    {
+      "layout": "imageFull",
+      "title": "Production is the only demo that counts",
+      "subtitle": "Every engagement ends with a system your team runs without us."
+    },
+    {
+      "layout": "grid",
+      "title": "What an engagement includes",
+      "items": [
+        { "title": "Discovery sprint", "body": "Two weeks mapping the highest-value AI opportunity in your workflow." },
+        { "title": "Build team", "body": "Two to four senior practitioners embedded with your engineers." },
+        { "title": "Handover plan", "body": "Documentation, training, and a runbook your team owns from day one." }
+      ]
+    },
+    {
+      "layout": "timeline",
+      "title": "From kickoff to production",
+      "items": [
+        { "label": "Week 1", "title": "Scope", "body": "Pick one workflow with measurable value." },
+        { "label": "Week 3", "title": "Working model", "body": "A first model running on your data." },
+        { "label": "Week 8", "title": "Pilot", "body": "Real users, real load, weekly reviews." },
+        { "label": "Week 12", "title": "Production", "body": "Deployed, monitored, and handed over." }
+      ]
+    },
+    {
+      "layout": "twoColumnDetail",
+      "title": "How we de-risk delivery",
+      "body": "Four habits carried into every engagement, whatever the stack.",
+      "items": [
+        { "title": "Ship weekly", "body": "Working software every Friday, not a report at the end of the quarter." },
+        { "title": "Measure impact", "body": "Every model is tied to a business metric before a line of code is written." },
+        { "title": "Pair by default", "body": "Your engineers build alongside ours, so capability transfers as we go." },
+        { "title": "Exit on purpose", "body": "The engagement is scoped to end — with your team running the system." }
+      ]
+    },
+    {
+      "layout": "feature",
+      "title": "The delivery pod",
+      "body": "A small senior team, shaped to the problem rather than to a org chart.",
+      "imageAspect": "portrait",
+      "items": [
+        { "title": "Lead practitioner", "body": "Owns the outcome and the architecture." },
+        { "title": "ML engineers", "body": "Build, evaluate, and productionize the models." },
+        { "title": "Your team", "body": "Embedded throughout, running it by the end." }
+      ]
+    },
+    {
+      "layout": "industry",
+      "title": "Financial services",
+      "subtitle": "Where model risk is board-level, delivery discipline wins.",
+      "items": [
+        { "body": "Banks and insurers come to us when a promising pilot meets model-risk review. We build the evaluation harnesses and audit trails that let compliance say yes." },
+        { "body": "Typical work: document intelligence for underwriting, controls monitoring, and assistant tooling for client-facing teams — all inside the client's perimeter." }
+      ],
+      "logos": ["http://localhost:3000/brand/symbol.svg", "http://localhost:3000/brand/wordmark.svg"]
+    },
+    {
+      "layout": "logoWall",
+      "title": "Teams we've shipped with",
+      "subtitle": "A sample of logos, loaded from real hosted URLs.",
+      "logos": [
+        "http://localhost:3000/brand/symbol.svg",
+        "http://localhost:3000/brand/wordmark.svg",
+        "http://localhost:3000/brand/symbol.svg",
+        "http://localhost:3000/brand/wordmark.svg"
+      ]
+    },
+    {
+      "layout": "textColumns",
+      "title": "Three beliefs about applied AI",
+      "columns": 3,
+      "bullets": [
+        "Models are the easy part. The hard part is the workflow around them — data contracts, evaluation, and the human handoffs that decide whether anyone trusts the output.",
+        "Small senior teams beat large programs. Every layer between the person building and the person using the system doubles the time to production.",
+        "Capability should transfer. If the client can't run the system without us a quarter later, we scoped the engagement wrong."
+      ]
+    },
+    {
+      "layout": "bullets",
+      "title": "Works on ink, too",
+      "background": "dark",
+      "figure": "rose",
+      "hide": { "logo": false },
+      "bullets": [
+        "Dark surface flips every foreground ink automatically",
+        "The logo mark swaps to its inverted cut",
+        "Accent numerals keep their brand color"
+      ],
+      "accent": "yellow"
+    }
+  ]
+}

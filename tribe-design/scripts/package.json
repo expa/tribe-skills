@@ -1,0 +1,9 @@
+{
+  "name": "tribe-design-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Shared headless render/export helpers for the tribe-design skill",
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

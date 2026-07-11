@@ -1,0 +1,21 @@
+{
+  "title": "Signup review flow",
+  "cornerRadius": 8,
+  "nodes": [
+    { "id": "start", "label": "New signup", "shape": "pill", "color": "dark" },
+    { "id": "validate", "label": "Validate details", "shape": "rounded", "color": "default" },
+    { "id": "decision", "label": "Valid?", "shape": "diamond", "color": "yellow" },
+    { "id": "provision", "label": "Provision account", "shape": "rounded", "color": "default" },
+    { "id": "reject", "label": "Send rejection", "shape": "rounded", "color": "orange" },
+    { "id": "audit", "label": "Audit log", "shape": "ellipse", "color": "default" },
+    { "id": "done", "label": "Done", "shape": "pill", "color": "brand" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "start", "to": "validate" },
+    { "id": "e2", "from": "validate", "to": "decision" },
+    { "id": "e3", "from": "decision", "to": "provision", "label": "yes" },
+    { "id": "e4", "from": "decision", "to": "reject", "label": "no", "color": "orange" },
+    { "id": "e5", "from": "provision", "to": "done" },
+    { "id": "e6", "from": "provision", "to": "audit", "label": "async", "dashed": true, "endCap": "circle" }
+  ]
+}

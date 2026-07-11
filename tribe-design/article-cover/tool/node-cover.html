@@ -1,0 +1,1149 @@
+<!doctype html>
+<!--
+  node-cover.html — standalone, param-driven harness for Tribe's article-cover
+  "node generator" (generative node/dot/trace artwork).
+
+  Vanilla-JS port of website/app/components/node-generator (originals in ./reference/):
+  image luma sampling, five routing modes, nuance highlights, vignettes, layer
+  stacking, the intro "wash" reveal, and the SVG exporter.
+
+  URL params (see NOTES.md for the full reference):
+    ?preset=<name|random>      composition preset (default: seeded-random pick)
+    ?theme=<name|random>       color theme (default: seeded-random pick)
+    ?settings=<JSON>           URI-encoded partial override (parent settings, or
+                               {nodeSettings, nodeSubLayers, parentStackIndex,
+                                vignettes, palette, backgroundColorKey, elementScale})
+    ?image=<path|url|none>     source photo to sample (default: none → procedural field)
+    ?ratio=1:1|3:2|2:3|16:9|9:16   frame aspect (default 3:2)
+    ?seed=<n>                  master seed (default 0) — deterministic output
+    ?size=<px>                 longest canvas edge (default 1600)
+    ?animate=0|1               1 = loop the wash reveal (for video capture)
+    ?origin=<x,y>              wash origin 0-1 fractions (default: seeded random)
+    ?jitter=<0-1>              wash front raggedness (default 0.3)
+    ?direction=out|in          wash direction (default out)
+
+  window.__READY__  — Promise; resolves after the still is painted (or, for
+                      animate=1, once the reveal loop has started).
+  window.exportSvg() — returns the composited SVG string for the current still.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tribe node cover</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #06141C; }
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { display: block; max-width: 100vw; max-height: 100vh; }
+  #err { color: #FB6411; font: 14px/1.5 monospace; padding: 24px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<canvas id="art"></canvas>
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DATA — ported verbatim from reference/defaults.ts, themes.ts, presets.ts
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const DEFAULT_NODE_SETTINGS = {
+  density: 800,
+  thresholdRange: { min: 0, max: 50 },
+  gamma: 1,
+  dotScale: 1,
+  lineScale: 1,
+  distance: 3,
+  grid: false,
+  routing: 'strict',
+  dirAngle: 0,
+  dirSpread: 30,
+  traceBranch: 3,
+  fill: false,
+  dotOutline: false,
+  dotOutlineWidth: 0.25,
+  dotColorKey: 'color9',
+  lineColorKey: 'color9',
+  nuances: [],
+  seed: 0,
+  imageOffsetX: 0,
+  imageOffsetY: 0,
+};
+
+/* Slot roles: color1 light pop · color2 contrast pop · color3 trace lines ·
+   color4 trace nodes · color5 deep accent · color6 canvas background ·
+   color7 primary lines · color8 grid accent · color9 primary dots · color10 ink. */
+const THEMES = [
+  { name: 'Pool',   backgroundColorKey: 'color6', palette: { color1: '#FAFAF8', color2: '#3B89A8', color3: '#E9712E', color4: '#A14000', color5: '#6B3209', color6: '#95FCFB', color7: '#65D9EE', color8: '#3B89A8', color9: '#3B89A8', color10: '#06141C' } },
+  { name: 'Lagoon', backgroundColorKey: 'color6', palette: { color1: '#EBEBE2', color2: '#FB6411', color3: '#FFC336', color4: '#E88B1C', color5: '#A4500B', color6: '#65D9EE', color7: '#95FCFB', color8: '#E88B1C', color9: '#95FCFB', color10: '#06141C' } },
+  { name: 'Brand',  backgroundColorKey: 'color6', palette: { color1: '#B2F3FF', color2: '#07404F', color3: '#07404F', color4: '#B2F3FF', color5: '#0D4E6E', color6: '#65D9EE', color7: '#B2F3FF', color8: '#FF7C0F', color9: '#07404F', color10: '#07404F' } },
+  { name: 'Teal',   backgroundColorKey: 'color6', palette: { color1: '#B2F3FF', color2: '#FEDE59', color3: '#07404F', color4: '#B2F3FF', color5: '#0D4E6E', color6: '#0A99C3', color7: '#65D9EE', color8: '#FF7C0F', color9: '#B2F3FF', color10: '#07404F' } },
+  { name: 'Ocean',  backgroundColorKey: 'color6', palette: { color1: '#BEE6F5', color2: '#FEDE59', color3: '#65D9EE', color4: '#BEE6F5', color5: '#07404F', color6: '#0D4E6E', color7: '#0A99C3', color8: '#FF7C0F', color9: '#BEE6F5', color10: '#07404F' } },
+  { name: 'Yellow', backgroundColorKey: 'color6', palette: { color1: '#FAFAF8', color2: '#7C6503', color3: '#BDA12E', color4: '#7C6503', color5: '#AD5913', color6: '#FEDE59', color7: '#FF7C0F', color8: '#0A99C3', color9: '#7C6503', color10: '#06141C' } },
+  { name: 'Solar',  backgroundColorKey: 'color6', palette: { color1: '#EBEBE2', color2: '#FFE25C', color3: '#06141C', color4: '#FB6411', color5: '#A4500B', color6: '#FFC336', color7: '#E88B1C', color8: '#FFE25C', color9: '#06141C', color10: '#06141C' } },
+  { name: 'Orange', backgroundColorKey: 'color6', palette: { color1: '#FEDE59', color2: '#6D1D00', color3: '#6D1D00', color4: '#F4C29D', color5: '#B64C07', color6: '#FF7C0F', color7: '#F4C29D', color8: '#FEDE59', color9: '#6D1D00', color10: '#06141C' } },
+  { name: 'Terra',  backgroundColorKey: 'color6', palette: { color1: '#FAFAF8', color2: '#65D9EE', color3: '#A14000', color4: '#6D1D00', color5: '#6B3209', color6: '#F4C29D', color7: '#B64C07', color8: '#FEDE59', color9: '#FB6411', color10: '#06141C' } },
+  { name: 'Clay',   backgroundColorKey: 'color6', palette: { color1: '#FAFAF8', color2: '#65D9EE', color3: '#6D1D00', color4: '#F4C29D', color5: '#6B3209', color6: '#D08D58', color7: '#A14000', color8: '#FEDE59', color9: '#6D1D00', color10: '#06141C' } },
+  { name: 'Brown',  backgroundColorKey: 'color6', palette: { color1: '#B2F3FF', color2: '#FEDE59', color3: '#6D1D00', color4: '#F4C29D', color5: '#6D1D00', color6: '#AD5913', color7: '#D08D58', color8: '#0A99C3', color9: '#F4C29D', color10: '#6D1D00' } },
+  { name: 'Ember',  backgroundColorKey: 'color6', palette: { color1: '#EBEBE2', color2: '#65D9EE', color3: '#FFC336', color4: '#EBEBE2', color5: '#A14000', color6: '#A4500B', color7: '#E9712E', color8: '#65D9EE', color9: '#FB6411', color10: '#06141C' } },
+  { name: 'Sand',   backgroundColorKey: 'color6', palette: { color1: '#FAFAF8', color2: '#FF7C0F', color3: '#6B3209', color4: '#06141C', color5: '#6D1D00', color6: '#C7BDB2', color7: '#06141C', color8: '#0A99C3', color9: '#6B3209', color10: '#06141C' } },
+];
+
+/* Presets describe geometry + palette-slot references; colors come from the theme.
+   Ported verbatim from reference/presets.ts (nuances listed are the authored ones;
+   like the app's applyPreset, they are re-rolled per seed unless you pass explicit
+   nuances via ?settings). */
+const BUNDLED_PRESETS = [
+  {
+    name: 'Stipple flow',
+    nodeSettings: { density: 4250, thresholdRange: { min: 0, max: 45 }, gamma: 1.3, dotScale: 2.5, lineScale: 1, distance: 3, grid: true, routing: 'strict', dirAngle: 16, dirSpread: 30, traceBranch: 3, fill: false, dotOutline: false, dotOutlineWidth: 0.25, dotColorKey: 'color9', lineColorKey: 'color9', nuances: [ { id: 'stipple-hl-light', colorKey: 'color1', amount: 0.02, thresholdRange: { min: 0, max: 255 }, seed: 11 }, { id: 'stipple-hl-pop', colorKey: 'color2', amount: 0.035, thresholdRange: { min: 0, max: 255 }, seed: 23 } ], seed: 0, imageOffsetX: 0, imageOffsetY: 0 },
+    nodeSubLayers: [ { settings: { density: 3450, thresholdRange: { min: 78, max: 99 }, gamma: 1.15, dotScale: 0.9, lineScale: 1.3, distance: 14.6, grid: false, routing: 'flow', dirAngle: 145, dirSpread: 127, traceBranch: 6, fill: false, dotOutline: false, dotOutlineWidth: 0.75, dotColorKey: 'color4', lineColorKey: 'color3', seed: 304, imageOffsetX: 0, imageOffsetY: 0 } } ],
+  },
+  {
+    name: 'Sparse traces',
+    nodeSettings: { density: 800, thresholdRange: { min: 153, max: 255 }, gamma: 0.45, dotScale: 1.05, lineScale: 2.5, distance: 15, grid: false, routing: 'traces', dirAngle: 145, dirSpread: 65, traceBranch: 7, fill: true, dotOutline: true, dotOutlineWidth: 0.7, dotColorKey: 'color9', lineColorKey: 'color7', nuances: [ { id: 'sparse-hl-light', colorKey: 'color1', amount: 0.03, thresholdRange: { min: 0, max: 255 }, seed: 7 }, { id: 'sparse-hl-pop', colorKey: 'color2', amount: 0.04, thresholdRange: { min: 0, max: 255 }, seed: 19 } ], seed: 0, imageOffsetX: 0, imageOffsetY: 0 },
+    nodeSubLayers: [ { settings: { density: 1150, thresholdRange: { min: 50, max: 175 }, gamma: 0.3, dotScale: 4, lineScale: 2.8, distance: 0, grid: true, routing: 'traces', dirAngle: 227, dirSpread: 108, traceBranch: 5, fill: false, dotOutline: false, dotOutlineWidth: 0.75, dotColorKey: 'color2', lineColorKey: 'color3', nuances: [], seed: 309, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 1,
+  },
+  {
+    name: 'Grid flow',
+    nodeSettings: { density: 950, thresholdRange: { min: 0, max: 58 }, gamma: 1.25, dotScale: 1.45, lineScale: 1, distance: 17.4, grid: true, routing: 'strict', dirAngle: 106, dirSpread: 110, traceBranch: 8, fill: false, dotOutline: false, dotOutlineWidth: 0.25, dotColorKey: 'color1', lineColorKey: 'color7', nuances: [ { id: 'grid-hl-pop', colorKey: 'color2', amount: 0.03, thresholdRange: { min: 0, max: 255 }, seed: 5 }, { id: 'grid-hl-accent', colorKey: 'color8', amount: 0.02, thresholdRange: { min: 0, max: 255 }, seed: 13 } ], seed: 0, imageOffsetX: 0, imageOffsetY: 0 },
+    nodeSubLayers: [ { settings: { density: 3350, thresholdRange: { min: 78, max: 189 }, gamma: 1.15, dotScale: 1.25, lineScale: 4, distance: 7.8, grid: true, routing: 'flow', dirAngle: 90, dirSpread: 61, traceBranch: 4, fill: false, dotOutline: false, dotOutlineWidth: 0.75, dotColorKey: 'color8', lineColorKey: 'color7', seed: 445, imageOffsetX: 0, imageOffsetY: 0 } } ],
+  },
+  {
+    name: 'Trace weave',
+    nodeSettings: { density: 1900, thresholdRange: { min: 0, max: 138 }, gamma: 0.9, dotScale: 0.95, lineScale: 2.75, distance: 10.3, grid: true, routing: 'traces', dirAngle: 211, dirSpread: 48, traceBranch: 4, fill: false, dotOutline: false, dotOutlineWidth: 0.25, dotColorKey: 'color9', lineColorKey: 'color7', nuances: [ { id: 'weave-hl-light', colorKey: 'color1', amount: 0.075, thresholdRange: { min: 0, max: 255 }, seed: 7 }, { id: 'weave-hl-pop', colorKey: 'color2', amount: 0.035, thresholdRange: { min: 0, max: 255 }, seed: 19 } ], seed: 0, imageOffsetX: 0, imageOffsetY: 0 },
+    nodeSubLayers: [ { settings: { density: 1750, thresholdRange: { min: 77, max: 176 }, gamma: 2.6, dotScale: 1.15, lineScale: 2, distance: 11.6, grid: true, routing: 'directional', dirAngle: 227, dirSpread: 108, traceBranch: 4, fill: false, dotOutline: true, dotOutlineWidth: 0.7, dotColorKey: 'color2', lineColorKey: 'color3', nuances: [], seed: 582, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 1,
+  },
+  {
+    name: 'Mosaic',
+    nodeSettings: { density: 1750, thresholdRange: { min: 0, max: 67 }, gamma: 1.2, dotScale: 2.6, lineScale: 2.8, distance: 2.6, grid: true, routing: 'free', dirAngle: 211, dirSpread: 48, traceBranch: 4, fill: false, dotOutline: false, dotOutlineWidth: 0.25, dotColorKey: 'color9', lineColorKey: 'color7', nuances: [ { id: 'mosaic-dots-deep', target: 'dots', colorKey: 'color9', amount: 0.032598195834544194, thresholdRange: { min: 166, max: 233 }, seed: 489 } ], seed: 620, imageOffsetX: 0, imageOffsetY: -0.16920002527757688 },
+    nodeSubLayers: [ { settings: { density: 1700, thresholdRange: { min: 77, max: 171 }, gamma: 2.45, dotScale: 1.1, lineScale: 1.25, distance: 6.7, grid: true, routing: 'strict', dirAngle: 227, dirSpread: 62, traceBranch: 6, fill: true, dotOutline: true, dotOutlineWidth: 0.7, dotColorKey: 'color2', lineColorKey: 'color3', nuances: [ { id: 'mosaic-sub-warm', target: 'dots', colorKey: 'color4', amount: 0.13804330162022996, thresholdRange: { min: 24, max: 192 }, seed: 546 }, { id: 'mosaic-sub-line-dark', target: 'lines', colorKey: 'color9', amount: 0.1126967734741715, thresholdRange: { min: 99, max: 245 }, seed: 430 }, { id: 'mosaic-sub-line-accent', target: 'lines', colorKey: 'color8', amount: 0.12902143051109283, thresholdRange: { min: 0, max: 255 }, seed: 825 } ], seed: 440, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 0,
+  },
+  {
+    name: 'Ember grid',
+    nodeSettings: { density: 2500, thresholdRange: { min: 145, max: 255 }, gamma: 0.55, dotScale: 0.85, lineScale: 1.25, distance: 11.1, grid: true, routing: 'strict', dirAngle: 145, dirSpread: 65, traceBranch: 7, fill: false, dotOutline: false, dotOutlineWidth: 0.55, dotColorKey: 'color9', lineColorKey: 'color7', nuances: [ { id: 'ember-dots', target: 'dots', colorKey: 'color6', amount: 0.2, thresholdRange: { min: 54, max: 189 }, seed: 524 }, { id: 'ember-lines', target: 'lines', colorKey: 'color1', amount: 0.185, thresholdRange: { min: 94, max: 255 }, seed: 896 } ], seed: 775, imageOffsetX: 0, imageOffsetY: 0.08908238927414987 },
+    nodeSubLayers: [ { settings: { density: 650, thresholdRange: { min: 33, max: 170 }, gamma: 0.35, dotScale: 3.9, lineScale: 2.8, distance: 0, grid: true, routing: 'traces', dirAngle: 227, dirSpread: 108, traceBranch: 4, fill: false, dotOutline: false, dotOutlineWidth: 0.75, dotColorKey: 'color2', lineColorKey: 'color3', nuances: [ { id: 'ember-sub-pop', target: 'dots', colorKey: 'color5', amount: 0.14, thresholdRange: { min: 0, max: 255 }, seed: 200 }, { id: 'ember-sub-light', target: 'dots', colorKey: 'color1', amount: 0, thresholdRange: { min: 77, max: 255 }, seed: 717 }, { id: 'ember-sub-warm', target: 'dots', colorKey: 'color4', amount: 0.07976943973031181, thresholdRange: { min: 150, max: 251 }, seed: 881 } ], seed: 649, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 1,
+  },
+  {
+    name: 'Clay traces',
+    nodeSettings: { density: 2200, thresholdRange: { min: 0, max: 38 }, gamma: 1.35, dotScale: 1.15, lineScale: 1.05, distance: 17.2, grid: true, routing: 'traces', dirAngle: 0, dirSpread: 103, traceBranch: 6, fill: false, dotOutline: true, dotOutlineWidth: 0.6, dotColorKey: 'color7', lineColorKey: 'color2', nuances: [ { id: 'clay-dots-deep', target: 'dots', colorKey: 'color3', amount: 0.03285302769174503, thresholdRange: { min: 97, max: 223 }, seed: 969 }, { id: 'clay-dots-pop', target: 'dots', colorKey: 'color2', amount: 0.06763706306159002, thresholdRange: { min: 162, max: 228 }, seed: 585 } ], seed: 961, imageOffsetX: 0, imageOffsetY: -0.09107789124259393 },
+    nodeSubLayers: [ { settings: { density: 2250, thresholdRange: { min: 123, max: 194 }, gamma: 1.2, dotScale: 1.5930745894221414, lineScale: 0.8746780796168905, distance: 14.393339010295776, grid: true, routing: 'traces', dirAngle: 282, dirSpread: 52, traceBranch: 6, fill: true, dotOutline: false, dotOutlineWidth: 0.3059043649347043, dotColorKey: 'color3', lineColorKey: 'color1', nuances: [ { id: 'clay-sub-pop', target: 'dots', colorKey: 'color2', amount: 0.10516075331633423, thresholdRange: { min: 0, max: 255 }, seed: 497 } ], seed: 218, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 0,
+  },
+  {
+    name: 'Pool drift',
+    nodeSettings: { density: 2600, thresholdRange: { min: 0, max: 101 }, gamma: 1.2440803396067877, dotScale: 2.6, lineScale: 1.75, distance: 11.7, grid: false, routing: 'free', dirAngle: 141, dirSpread: 57, traceBranch: 4, fill: false, dotOutline: false, dotOutlineWidth: 0.2547908070330824, dotColorKey: 'color7', lineColorKey: 'color5', nuances: [ { id: 'pool-dots-accent', target: 'dots', colorKey: 'color8', amount: 0.024935421344817733, thresholdRange: { min: 0, max: 255 }, seed: 740 }, { id: 'pool-lines-deep', target: 'lines', colorKey: 'color3', amount: 0.04006987156932751, thresholdRange: { min: 10, max: 209 }, seed: 968 }, { id: 'pool-dots-dark', target: 'dots', colorKey: 'color9', amount: 0.155, thresholdRange: { min: 12, max: 154 }, seed: 757 } ], seed: 365, imageOffsetX: 0, imageOffsetY: 0.27557261645213665 },
+    nodeSubLayers: [ { settings: { density: 1600, thresholdRange: { min: 163, max: 180 }, gamma: 0.9, dotScale: 2.35, lineScale: 2.2367614008563894, distance: 2, grid: true, routing: 'directional', dirAngle: 110, dirSpread: 126, traceBranch: 5, fill: false, dotOutline: true, dotOutlineWidth: 0.5, dotColorKey: 'color2', lineColorKey: 'color2', nuances: [ { id: 'pool-sub-light', target: 'dots', colorKey: 'color7', amount: 0.2, thresholdRange: { min: 0, max: 255 }, seed: 368 }, { id: 'pool-sub-line-bright', target: 'lines', colorKey: 'color6', amount: 0.03, thresholdRange: { min: 0, max: 255 }, seed: 270 }, { id: 'pool-sub-line-deep', target: 'lines', colorKey: 'color5', amount: 0.065, thresholdRange: { min: 0, max: 255 }, seed: 614 } ], seed: 327, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 1,
+  },
+  {
+    name: 'Amber drift',
+    nodeSettings: { density: 2600, thresholdRange: { min: 0, max: 101 }, gamma: 1.2440803396067877, dotScale: 2.6, lineScale: 1.75, distance: 11.7, grid: false, routing: 'free', dirAngle: 141, dirSpread: 57, traceBranch: 4, fill: false, dotOutline: false, dotOutlineWidth: 0.2547908070330824, dotColorKey: 'color7', lineColorKey: 'color5', nuances: [ { id: 'amber-dots-deep', target: 'dots', colorKey: 'color2', amount: 0.1297891080135472, thresholdRange: { min: 0, max: 255 }, seed: 284 }, { id: 'amber-lines-warm', target: 'lines', colorKey: 'color4', amount: 0.06800255487951336, thresholdRange: { min: 0, max: 255 }, seed: 60 } ], seed: 870, imageOffsetX: 0, imageOffsetY: 0.1970109607549013 },
+    nodeSubLayers: [ { settings: { density: 1600, thresholdRange: { min: 145, max: 219 }, gamma: 0.75, dotScale: 2, lineScale: 2.75, distance: 8.6, grid: true, routing: 'directional', dirAngle: 110, dirSpread: 126, traceBranch: 5, fill: false, dotOutline: true, dotOutlineWidth: 0.9, dotColorKey: 'color2', lineColorKey: 'color2', nuances: [ { id: 'amber-sub-light', target: 'dots', colorKey: 'color1', amount: 0.165, thresholdRange: { min: 0, max: 255 }, seed: 195 } ], seed: 463, imageOffsetX: 0, imageOffsetY: 0 } } ],
+    parentStackIndex: 1,
+  },
+];
+
+const PALETTE_KEYS = ['color1','color2','color3','color4','color5','color6','color7','color8','color9','color10'];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PURE MATH — ported from reference/NodeCanvas.tsx + edgeFade.ts
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const SAMPLE_W = 320;       // luma-map resolution (density sampling space)
+const MIN_DOT_R = 1;        // elementScale floors (render-canvas px)
+const MIN_LINE_W = 1.15;
+const JITTER_SEED = 0x5eed; // fixed seed for the reveal's sweep jitter
+
+/* Vignette defaults (edgeFade.ts). */
+const EDGE_FADE_DEFAULT = 0.2;
+const EDGE_FADE_CONTRAST_DEFAULT = 0.5;
+const defaultVignette = () => ({ amount: EDGE_FADE_DEFAULT, contrast: EDGE_FADE_CONTRAST_DEFAULT, invert: false });
+
+/* Deterministic 32-bit PRNG (mulberry32). */
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* Deterministic per-index hash → 0-1. */
+function hash01(i, seed) {
+  let t = (Math.imul(i + 1, 2654435761) ^ Math.imul(seed + 1, 1597334677)) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+/* Luma-driven highlight test (nuances). */
+function lumaHighlight(adj, nu, n, key) {
+  const { min, max } = nu.thresholdRange;
+  if (adj < min || adj > max) return false;
+  const b = (adj - min) / Math.max(1, max - min);
+  const prob = nu.amount * (0.25 + 0.75 * b);
+  return hash01(key, nu.seed * 101 + n) < prob;
+}
+
+function lumaPasses(v, gamma, rmin, rmax) {
+  const adjusted = gamma !== 1 ? ((v / 255) ** gamma) * 255 : v;
+  return adjusted >= rmin && adjusted <= rmax;
+}
+
+function smoothstep(t) {
+  const x = t < 0 ? 0 : t > 1 ? 1 : t;
+  return x * x * (3 - 2 * x);
+}
+
+/* Vignette keep-weight for a point at frame pixel (fx, fy) in a w×h frame. */
+function edgeKeepWeight(fx, fy, w, h, fade, contrast, invert) {
+  if (fade <= 0) return 1;
+  const band = Math.min(w, h) * fade;
+  if (band <= 0) return 1;
+  const d = Math.min(fx, w - fx, fy, h - fy);
+  const t = smoothstep(d / band);
+  const base = invert ? 1 - t : t;
+  const k = 2 ** ((contrast - 0.5) * 5);
+  return k === 1 ? base : base ** k;
+}
+
+/* Cover-fit of a naturalW×naturalH source into a w×h viewport, panned by the
+   settings' offsets (clamped so the viewport stays covered). */
+function computeFitRect(naturalW, naturalH, w, h, settings) {
+  const ar = naturalW / naturalH;
+  let dw = w;
+  let dh = w / ar;
+  if (dh < h) { dh = h; dw = h * ar; }
+  return {
+    dx: Math.min(0, Math.max(w - dw, (w - dw) / 2 + settings.imageOffsetX * w)),
+    dy: Math.min(0, Math.max(h - dh, (h - dh) / 2 + settings.imageOffsetY * h)),
+    dw, dh,
+  };
+}
+
+function resolvePaletteColor(key, palette) {
+  return palette[key] ?? '#06141C';
+}
+
+/* ── Sample maps ─────────────────────────────────────────────────────────── */
+
+/* Rec. 709 luma map of a loaded image at SAMPLE_W. */
+function buildSampleMapFromImage(img) {
+  const ar = img.naturalWidth / img.naturalHeight;
+  const w = SAMPLE_W;
+  const h = Math.max(1, Math.round(SAMPLE_W / ar));
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  const octx = off.getContext('2d', { willReadFrequently: true });
+  octx.drawImage(img, 0, 0, w, h);
+  const px = octx.getImageData(0, 0, w, h).data;
+  const luma = new Uint8ClampedArray(w * h);
+  for (let i = 0, j = 0; i < px.length; i += 4, j++) {
+    luma[j] = (px[i] * 0.2126 + px[i + 1] * 0.7152 + px[i + 2] * 0.0722) | 0;
+  }
+  return { width: w, height: h, luma };
+}
+
+/* HARNESS ADDITION (not in the app): a procedural luma field used when no
+   source image is given, so preset renders work fully offline/deterministically.
+   Layered value noise + a directional gradient, histogram-stretched to 0-255 so
+   every preset's threshold band finds coherent tonal regions to sample. */
+function buildProceduralSampleMap(frameAspect, seed) {
+  const w = SAMPLE_W;
+  const h = Math.max(1, Math.round(SAMPLE_W / frameAspect));
+  const lat = (ix, iy, o) => hash01(((ix * 73856093) ^ (iy * 19349663) ^ (o * 83492791)) >>> 0, seed * 911 + 17);
+  const noise = (x, y, o) => {
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const tx = smoothstep(x - x0), ty = smoothstep(y - y0);
+    const a = lat(x0, y0, o), b = lat(x0 + 1, y0, o), c = lat(x0, y0 + 1, o), d = lat(x0 + 1, y0 + 1, o);
+    return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+  };
+  const rng = mulberry32(seed * 5087 + 29);
+  const gA = rng() * Math.PI * 2;
+  const gx = Math.cos(gA), gy = Math.sin(gA);
+  const short = Math.min(w, h);
+  const raw = new Float32Array(w * h);
+  let mn = Infinity, mx = -Infinity;
+  for (let iy = 0; iy < h; iy++) {
+    for (let ix = 0; ix < w; ix++) {
+      const cx = ix / short * 3, cy = iy / short * 3; // ~3 cells across the shorter edge
+      let v = noise(cx, cy, 1) + 0.5 * noise(cx * 2, cy * 2, 2) + 0.25 * noise(cx * 4, cy * 4, 3);
+      v += 0.8 * ((ix / w) * gx + (iy / h) * gy); // large-scale tonal sweep
+      raw[iy * w + ix] = v;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+  }
+  const luma = new Uint8ClampedArray(w * h);
+  const span = Math.max(1e-6, mx - mn);
+  for (let i = 0; i < raw.length; i++) luma[i] = ((raw[i] - mn) / span) * 255;
+  return { width: w, height: h, luma };
+}
+
+/* ── Point sampling ──────────────────────────────────────────────────────── */
+
+function randomSamplePoints(field, originalLuma, w, h, settings) {
+  const { density, thresholdRange, gamma, seed } = settings;
+  const rng = mulberry32(seed * 7919 + 1);
+  const out = [];
+  const maxTries = density * 40;
+  let tries = 0;
+  while (out.length < density && tries < maxTries) {
+    tries++;
+    const ix = (rng() * w) | 0;
+    const iy = (rng() * h) | 0;
+    const idx = iy * w + ix;
+    if (!lumaPasses(field[idx], gamma, thresholdRange.min, thresholdRange.max)) continue;
+    out.push({ x: ix / w, y: iy / h, luma: originalLuma[idx] / 255 });
+  }
+  return out;
+}
+
+function gridSamplePoints(field, originalLuma, w, h, settings) {
+  const { density, thresholdRange, gamma } = settings;
+  const aspect = w / h;
+  const BASE_ROWS = 4;
+  const baseCols = Math.max(1, Math.round(BASE_ROWS * aspect));
+  const idealRows = Math.max(1, Math.sqrt(density / aspect));
+  const level = Math.max(0, Math.min(5, Math.round(Math.log2(idealRows / BASE_ROWS))));
+  const rows = BASE_ROWS * 2 ** level;
+  const cols = baseCols * 2 ** level;
+  const out = [];
+  for (let cy = 0; cy <= rows; cy++) {
+    for (let cx = 0; cx <= cols; cx++) {
+      const x = cx / cols;
+      const y = cy / rows;
+      const ix = Math.min(w - 1, Math.floor(x * w));
+      const iy = Math.min(h - 1, Math.floor(y * h));
+      const idx = iy * w + ix;
+      if (!lumaPasses(field[idx], gamma, thresholdRange.min, thresholdRange.max)) continue;
+      out.push({ x, y, luma: originalLuma[idx] / 255 });
+    }
+  }
+  return out;
+}
+
+function samplePoints(map, settings) {
+  return settings.grid
+    ? gridSamplePoints(map.luma, map.luma, map.width, map.height, settings)
+    : randomSamplePoints(map.luma, map.luma, map.width, map.height, settings);
+}
+
+/* ── Routing ─────────────────────────────────────────────────────────────── */
+
+function buildSpatialGrid(points, cellSize) {
+  const safeCell = Math.max(1e-6, cellSize);
+  const cols = Math.max(1, Math.ceil(1 / safeCell));
+  const grid = new Map();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const cx = Math.min(cols - 1, (p.x / safeCell) | 0);
+    const cy = Math.min(cols - 1, (p.y / safeCell) | 0);
+    const k = cy * cols + cx;
+    const bucket = grid.get(k);
+    if (bucket) bucket.push(i);
+    else grid.set(k, [i]);
+  }
+  return { grid, cols };
+}
+
+function eachNeighbour(points, i, maxDistNorm, grid, cols, jMustExceedI, visit) {
+  const cellSize = Math.max(1e-6, maxDistNorm);
+  const p = points[i];
+  const cx = Math.min(cols - 1, (p.x / cellSize) | 0);
+  const cy = Math.min(cols - 1, (p.y / cellSize) | 0);
+  const max2 = maxDistNorm * maxDistNorm;
+  for (let dy = -1; dy <= 1; dy++) {
+    const ny = cy + dy;
+    if (ny < 0 || ny >= cols) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx;
+      if (nx < 0 || nx >= cols) continue;
+      const bucket = grid.get(ny * cols + nx);
+      if (!bucket) continue;
+      for (const j of bucket) {
+        if (j === i) continue;
+        if (jMustExceedI && j <= i) continue;
+        const q = points[j];
+        const ddx = p.x - q.x;
+        const ddy = p.y - q.y;
+        const d2 = ddx * ddx + ddy * ddy;
+        if (d2 <= max2) visit(j, d2);
+      }
+    }
+  }
+}
+
+function routeStrict(points, maxDistNorm) {
+  if (maxDistNorm <= 0 || points.length < 2) return [];
+  const { grid, cols } = buildSpatialGrid(points, maxDistNorm);
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    eachNeighbour(points, i, maxDistNorm, grid, cols, true, (j) => out.push([i, j]));
+  }
+  return out;
+}
+
+function routeFree(points, maxDistNorm, seed) {
+  const all = routeStrict(points, maxDistNorm);
+  const rng = mulberry32(seed * 6271 + 9);
+  return all.filter(() => rng() < 0.4);
+}
+
+function routeTraces(points, maxDistNorm, traceBranch) {
+  if (maxDistNorm <= 0 || points.length < 2) return [];
+  const { grid, cols } = buildSpatialGrid(points, maxDistNorm);
+  const seen = new Set();
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const candidates = [];
+    eachNeighbour(points, i, maxDistNorm, grid, cols, false, (j, d2) => { candidates.push([j, d2]); });
+    candidates.sort((a, b) => a[1] - b[1]);
+    for (let k = 0; k < Math.min(traceBranch, candidates.length); k++) {
+      const j = candidates[k][0];
+      const key = i < j ? i * points.length + j : j * points.length + i;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push([Math.min(i, j), Math.max(i, j)]);
+    }
+  }
+  return out;
+}
+
+function routeFlow(points, maxDistNorm, seed) {
+  if (maxDistNorm <= 0 || points.length < 2) return [];
+  const { grid, cols } = buildSpatialGrid(points, maxDistNorm);
+  const fieldAngle = (x, y) =>
+    Math.sin(x * 6.28 + seed * 0.1) * 1.4 + Math.cos(y * 4.71 + seed * 0.07) * 1.1;
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const flowA = fieldAngle(p.x, p.y);
+    const fx = Math.cos(flowA);
+    const fy = Math.sin(flowA);
+    let bestJ = -1;
+    let bestScore = -Infinity;
+    eachNeighbour(points, i, maxDistNorm, grid, cols, false, (j, d2) => {
+      const q = points[j];
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const dot = dx * fx + dy * fy;
+      const score = dot / (Math.sqrt(d2) + 1e-6);
+      if (score > bestScore) { bestScore = score; bestJ = j; }
+    });
+    if (bestJ >= 0 && bestScore > 0) {
+      const key = Math.min(i, bestJ) * points.length + Math.max(i, bestJ);
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push([Math.min(i, bestJ), Math.max(i, bestJ)]);
+      }
+    }
+  }
+  return out;
+}
+
+function routeDirectional(points, maxDistNorm, angleDeg, spreadDeg) {
+  if (maxDistNorm <= 0 || points.length < 2) return [];
+  const { grid, cols } = buildSpatialGrid(points, maxDistNorm);
+  const target = (angleDeg * Math.PI) / 180;
+  const cosTarget = Math.cos(target);
+  const sinTarget = Math.sin(target);
+  const cosThreshold = Math.cos((spreadDeg * Math.PI) / 180);
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    eachNeighbour(points, i, maxDistNorm, grid, cols, true, (j) => {
+      const q = points[j];
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+      const align = Math.abs((dx * cosTarget + dy * sinTarget) / len);
+      if (align >= cosThreshold) out.push([i, j]);
+    });
+  }
+  return out;
+}
+
+function computeRouting(points, settings, sampleW) {
+  const maxDistNorm = settings.distance / sampleW;
+  const mode = settings.routing;
+  if (mode === 'strict') return routeStrict(points, maxDistNorm);
+  if (mode === 'free') return routeFree(points, maxDistNorm, settings.seed);
+  if (mode === 'traces') return routeTraces(points, maxDistNorm, settings.traceBranch);
+  if (mode === 'flow') return routeFlow(points, maxDistNorm, settings.seed);
+  return routeDirectional(points, maxDistNorm, settings.dirAngle, settings.dirSpread);
+}
+
+function computeTriangles(pointCount, traces) {
+  const adj = Array.from({ length: pointCount }, () => new Set());
+  for (const [i, j] of traces) adj[i].add(j);
+  const out = [];
+  for (const [i, j] of traces) {
+    const ai = adj[i];
+    const aj = adj[j];
+    if (aj.size === 0) continue;
+    const [small, large] = ai.size < aj.size ? [ai, aj] : [aj, ai];
+    for (const k of small) {
+      if (k > j && large.has(k)) out.push([i, j, k]);
+    }
+  }
+  return out;
+}
+
+/* ── Reveal timing (coverAnimation.ts) ───────────────────────────────────── */
+
+const ANIM = { leadMs: 260, sweepMs: 2400, tailMs: 480 };
+const SWEEP_SPAN = 0.62;
+const FADE = 0.2;
+const TYPE_OFFSET = { fill: 0, dot: 0.05, line: 0.14 };
+const JITTER_SPAN = 0.35;
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+function elementProgress(g, s, type) {
+  const arrival = s * SWEEP_SPAN + TYPE_OFFSET[type];
+  return clamp01((g - arrival) / FADE);
+}
+function easeOutCubic(t) {
+  const u = 1 - t;
+  return 1 - u * u * u;
+}
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  const u = t - 1;
+  return 1 + c3 * u * u * u + c1 * u * u;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   COMPOSITION BUILDER — seeded equivalents of NodeApp's applyTheme/applyPreset
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function visibleSlots(palette, backgroundColorKey) {
+  const bg = palette[backgroundColorKey];
+  const visible = PALETTE_KEYS.filter((k) => palette[k] !== bg);
+  return visible.length > 0 ? visible : PALETTE_KEYS.slice();
+}
+
+/* Seeded port of NodeApp.randomNuances(). */
+function randomNuances(rng, palette, backgroundColorKey) {
+  const visible = visibleSlots(palette, backgroundColorKey);
+  const count = 1 + Math.floor(rng() * 3);
+  return Array.from({ length: count }, (_, i) => {
+    const width = 5 + Math.floor(rng() * 11);       // 5–15
+    const min = 80 + Math.floor(rng() * (240 - 80)); // 80–240
+    return {
+      id: 'nuance-' + i,
+      target: i > 0 && rng() < 0.5 ? 'lines' : 'dots',
+      amount: 0.3 + rng() * 0.5,
+      colorKey: visible[Math.floor(rng() * visible.length)],
+      thresholdRange: { min, max: Math.min(255, min + width) },
+      seed: Math.floor(rng() * 1000),
+    };
+  });
+}
+
+/* NodeApp.boldness — orders the render stack heaviest-first (bottom). */
+function boldness(s) {
+  return (s.dotScale / 5) * 2 + s.lineScale / 5 + s.density / 6000;
+}
+
+/* The render stack, bottom-first: sublayer indices with -1 marking the parent. */
+function computeStack(subCount, parentStackIndex) {
+  const idx = Math.max(0, Math.min(parentStackIndex ?? 0, subCount));
+  const order = [];
+  for (let i = 0; i < idx; i++) order.push(i);
+  order.push(-1);
+  for (let i = idx; i < subCount; i++) order.push(i);
+  return order;
+}
+
+function findByName(list, name) {
+  if (!name) return null;
+  const slug = (s) => s.toLowerCase().replace(/[\s_-]+/g, '');
+  return list.find((e) => slug(e.name) === slug(name)) ?? null;
+}
+
+function deepMergeSettings(base, partial) {
+  const out = { ...base, ...partial };
+  if (partial.thresholdRange) out.thresholdRange = { ...base.thresholdRange, ...partial.thresholdRange };
+  if (partial.nuances) out.nuances = partial.nuances;
+  return out;
+}
+
+/* Build the full composition from URL params. rng draws happen in a FIXED order
+   so a given seed is reproducible regardless of which params are set. */
+function buildComposition(params) {
+  const rng = mulberry32((params.seed | 0) * 104729 + 7);
+  const themeDraw = rng();
+  const presetDraw = rng();
+  const originDrawX = rng();
+  const originDrawY = rng();
+
+  const theme = params.theme === 'random' || !params.theme
+    ? (findByName(THEMES, params.theme) ?? THEMES[Math.floor(themeDraw * THEMES.length)])
+    : (findByName(THEMES, params.theme) ?? THEMES[Math.floor(themeDraw * THEMES.length)]);
+  const preset = params.preset && params.preset !== 'random'
+    ? (findByName(BUNDLED_PRESETS, params.preset) ?? BUNDLED_PRESETS[Math.floor(presetDraw * BUNDLED_PRESETS.length)])
+    : BUNDLED_PRESETS[Math.floor(presetDraw * BUNDLED_PRESETS.length)];
+
+  const palette = { ...theme.palette };
+  let backgroundColorKey = theme.backgroundColorKey;
+
+  // applyPreset equivalent: fresh per-layer seeds + fresh nuances per master seed.
+  const randSeed = () => Math.floor(rng() * 1000);
+  let parent = {
+    ...DEFAULT_NODE_SETTINGS,
+    ...preset.nodeSettings,
+    seed: randSeed(),
+    nuances: randomNuances(rng, palette, backgroundColorKey),
+  };
+  let subs = preset.nodeSubLayers.map((s) => ({
+    ...DEFAULT_NODE_SETTINGS,
+    ...s.settings,
+    seed: randSeed(),
+    nuances: randomNuances(rng, palette, backgroundColorKey),
+  }));
+  let parentStackIndex = preset.parentStackIndex ?? 0;
+
+  // sortStackByBoldness: heaviest layer to the bottom.
+  {
+    const order = computeStack(subs.length, parentStackIndex)
+      .map((id) => ({ id, score: boldness(id === -1 ? parent : subs[id]) }))
+      .sort((a, b) => b.score - a.score)
+      .map((e) => e.id);
+    subs = order.filter((id) => id !== -1).map((id) => subs[id]);
+    parentStackIndex = Math.max(0, order.indexOf(-1));
+  }
+
+  // shuffleVignette: seeded jitter of the primary pass around its defaults.
+  const jit = (base, spread) => Math.min(1, Math.max(0, base + (rng() * 2 - 1) * spread));
+  let vignettes = [{ amount: jit(EDGE_FADE_DEFAULT, 0.08), contrast: jit(EDGE_FADE_CONTRAST_DEFAULT, 0.15), invert: false }];
+
+  let elementScale = 1;
+
+  // Seeded image-offset draws (consumed even without an image, to keep the
+  // stream stable); applied later once the image's aspect is known.
+  const offsetDrawX = rng() * 2 - 1;
+  const offsetDrawY = rng() * 2 - 1;
+
+  // ?settings override — composition-level keys, or a partial parent NodeSettings.
+  if (params.settings) {
+    const o = params.settings;
+    const compositionKeys = ['nodeSettings', 'nodeSubLayers', 'parentStackIndex', 'vignettes', 'palette', 'backgroundColorKey', 'elementScale'];
+    if (compositionKeys.some((k) => k in o)) {
+      if (o.nodeSettings) parent = deepMergeSettings(parent, o.nodeSettings);
+      if (o.nodeSubLayers) subs = o.nodeSubLayers.map((s) => deepMergeSettings({ ...DEFAULT_NODE_SETTINGS }, s.settings ?? s));
+      if (o.parentStackIndex != null) parentStackIndex = o.parentStackIndex;
+      if (o.vignettes) vignettes = o.vignettes.map((v) => ({ ...defaultVignette(), ...v }));
+      if (o.palette) Object.assign(palette, o.palette);
+      if (o.backgroundColorKey) backgroundColorKey = o.backgroundColorKey;
+      if (o.elementScale != null) elementScale = o.elementScale;
+    } else {
+      parent = deepMergeSettings(parent, o);
+    }
+  }
+
+  return {
+    themeName: theme.name,
+    presetName: preset.name,
+    palette,
+    backgroundColorKey,
+    parent,
+    subs,
+    parentStackIndex,
+    vignettes,
+    elementScale,
+    originDrawX,
+    originDrawY,
+    offsetDrawX,
+    offsetDrawY,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER RENDER DATA — points → vignette filter → traces → triangles → nuances
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* sourceDims: the natural size of whatever feeds computeFitRect (image natural
+   dims, or the frame itself for the procedural field). */
+function buildLayerData(settings, map, sourceDims, frameW, frameH, vignettes, palette, backgroundColorKey) {
+  let points = samplePoints(map, settings);
+
+  const activeVignettes = vignettes.filter((v) => v.amount > 0);
+  if (activeVignettes.length > 0) {
+    const { dx, dy, dw, dh } = computeFitRect(sourceDims.w, sourceDims.h, frameW, frameH, settings);
+    points = points.filter((p, i) => {
+      const fx = dx + p.x * dw;
+      const fy = dy + p.y * dh;
+      let keep = 1;
+      for (const v of activeVignettes) keep *= edgeKeepWeight(fx, fy, frameW, frameH, v.amount, v.contrast, v.invert);
+      return hash01(i, settings.seed) < keep;
+    });
+  }
+
+  const traces = computeRouting(points, settings, map.width);
+  const triangles = settings.fill && traces.length > 0 ? computeTriangles(points.length, traces) : [];
+
+  // Nuance assignments: which pass (index) claims each trace / dot; -1 = base.
+  const nuances = settings.nuances ?? [];
+  const nuanceTarget = (nu) => nu.target ?? 'dots';
+  let lineNuanceAssignment = null;
+  if (points.length && traces.length && nuances.some((nu) => nuanceTarget(nu) === 'lines')) {
+    lineNuanceAssignment = new Int8Array(traces.length).fill(-1);
+    for (let t = 0; t < traces.length; t++) {
+      const [i, j] = traces[t];
+      const luma = (points[i].luma + points[j].luma) / 2;
+      const adjusted = settings.gamma !== 1 ? (luma ** settings.gamma) * 255 : luma * 255;
+      for (let n = 0; n < nuances.length; n++) {
+        const nu = nuances[n];
+        if (nuanceTarget(nu) !== 'lines') continue;
+        if (lumaHighlight(adjusted, nu, n, t)) { lineNuanceAssignment[t] = n; break; }
+      }
+    }
+  }
+  const hasDotNuance = nuances.some((nu) => nuanceTarget(nu) === 'dots');
+  let nuanceAssignment = null;
+  if (points.length && (hasDotNuance || lineNuanceAssignment)) {
+    nuanceAssignment = new Int8Array(points.length).fill(-1);
+    if (lineNuanceAssignment) {
+      for (let t = 0; t < traces.length; t++) {
+        const n = lineNuanceAssignment[t];
+        if (n < 0) continue;
+        const [i, j] = traces[t];
+        if (nuanceAssignment[i] === -1) nuanceAssignment[i] = n;
+        if (nuanceAssignment[j] === -1) nuanceAssignment[j] = n;
+      }
+    }
+    if (hasDotNuance) {
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const adjusted = settings.gamma !== 1 ? (p.luma ** settings.gamma) * 255 : p.luma * 255;
+        for (let n = 0; n < nuances.length; n++) {
+          const nu = nuances[n];
+          if (nuanceTarget(nu) !== 'dots') continue;
+          if (lumaHighlight(adjusted, nu, n, i)) { nuanceAssignment[i] = n; break; }
+        }
+      }
+    }
+  }
+
+  return {
+    settings,
+    sourceDims,
+    points,
+    traces,
+    triangles,
+    nuances,
+    nuanceTarget,
+    lineNuanceAssignment,
+    nuanceAssignment,
+    dotColor: resolvePaletteColor(settings.dotColorKey, palette),
+    lineColor: resolvePaletteColor(settings.lineColorKey, palette),
+    nuanceColors: nuances.map((n) => resolvePaletteColor(n.colorKey, palette)),
+    background: palette[backgroundColorKey],
+    sweep: null, // filled lazily for the animated path
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DRAWING — static (batched by color) + animated wash, per layer
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function layerGeometry(layer, w, h, elementScale) {
+  const { dx, dy, dw, dh } = computeFitRect(layer.sourceDims.w, layer.sourceDims.h, w, h, layer.settings);
+  const baseRadius = Math.max(0.5, Math.min(dw, dh) / 320);
+  const shrink = (natural, floor) => Math.max(Math.min(natural, floor), natural * elementScale);
+  const baseDotR = shrink(baseRadius * layer.settings.dotScale, MIN_DOT_R);
+  const lw = shrink(Math.max(0.5, baseRadius * 0.6 * layer.settings.lineScale), MIN_LINE_W);
+  const outlineW = Math.max(0.5, baseDotR * (layer.settings.dotOutlineWidth ?? 0.25));
+  return { dx, dy, dw, dh, baseDotR, lw, outlineW };
+}
+
+function drawLayerStatic(ctx, layer, w, h, elementScale) {
+  const { points, traces, triangles, settings, lineColor, dotColor, nuanceColors,
+          lineNuanceAssignment, nuanceAssignment, nuances, nuanceTarget, background } = layer;
+  if (points.length === 0) return;
+  const { dx, dy, dw, dh, baseDotR, lw, outlineW } = layerGeometry(layer, w, h, elementScale);
+
+  if (settings.fill && triangles.length > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = lineColor;
+    for (const [i, j, k] of triangles) {
+      const a = points[i], b = points[j], c = points[k];
+      ctx.beginPath();
+      ctx.moveTo(dx + a.x * dw, dy + a.y * dh);
+      ctx.lineTo(dx + b.x * dw, dy + b.y * dh);
+      ctx.lineTo(dx + c.x * dw, dy + c.y * dh);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  if (traces.length > 0) {
+    const drawTraceGroup = (color, claim) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      let any = false;
+      for (let t = 0; t < traces.length; t++) {
+        if ((lineNuanceAssignment ? lineNuanceAssignment[t] : -1) !== claim) continue;
+        const [i, j] = traces[t];
+        const a = points[i], b = points[j];
+        ctx.moveTo(dx + a.x * dw, dy + a.y * dh);
+        ctx.lineTo(dx + b.x * dw, dy + b.y * dh);
+        any = true;
+      }
+      if (any) ctx.stroke();
+    };
+    drawTraceGroup(lineColor, -1);
+    layer.nuanceColors.forEach((color, n) => {
+      if (nuanceTarget(nuances[n]) === 'lines') drawTraceGroup(color, n);
+    });
+  }
+
+  const drawDotGroup = (color, claim) => {
+    if (settings.dotOutline) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = outlineW;
+      ctx.fillStyle = background ?? '#FFFFFF';
+    } else {
+      ctx.fillStyle = color;
+    }
+    for (let i = 0; i < points.length; i++) {
+      if ((nuanceAssignment ? nuanceAssignment[i] : -1) !== claim) continue;
+      const p = points[i];
+      ctx.beginPath();
+      ctx.arc(dx + p.x * dw, dy + p.y * dh, baseDotR, 0, Math.PI * 2);
+      ctx.fill();
+      if (settings.dotOutline) ctx.stroke();
+    }
+  };
+  drawDotGroup(dotColor, -1);
+  nuanceColors.forEach((color, n) => drawDotGroup(color, n));
+}
+
+/* Per-point sweep coordinates for the reveal (0 = enters first), cached per layer. */
+function layerSweep(layer, w, h, anim) {
+  if (layer.sweep && layer.sweep.w === w && layer.sweep.h === h) return layer.sweep.arr;
+  const { points } = layer;
+  const { dx, dy, dw, dh } = computeFitRect(layer.sourceDims.w, layer.sourceDims.h, w, h, layer.settings);
+  const opx = anim.originX * w;
+  const opy = anim.originY * h;
+  const maxD = Math.max(
+    Math.hypot(opx, opy), Math.hypot(w - opx, opy),
+    Math.hypot(opx, h - opy), Math.hypot(w - opx, h - opy),
+  ) || 1;
+  const inward = anim.direction === 'in';
+  const arr = new Float32Array(points.length);
+  for (let i = 0; i < points.length; i++) {
+    const d = Math.hypot(dx + points[i].x * dw - opx, dy + points[i].y * dh - opy);
+    let s = d > maxD ? 1 : d / maxD;
+    if (inward) s = 1 - s;
+    if (anim.jitter > 0) {
+      s += (hash01(i, JITTER_SEED) * 2 - 1) * anim.jitter * JITTER_SPAN;
+      s = s < 0 ? 0 : s > 1 ? 1 : s;
+    }
+    arr[i] = s;
+  }
+  layer.sweep = { w, h, arr };
+  return arr;
+}
+
+function drawLayerAnimated(ctx, layer, w, h, elementScale, animG, anim) {
+  const { points, traces, triangles, settings, lineColor, dotColor, nuanceColors,
+          lineNuanceAssignment, nuanceAssignment, background } = layer;
+  if (points.length === 0) return;
+  const { dx, dy, dw, dh, baseDotR, lw, outlineW } = layerGeometry(layer, w, h, elementScale);
+  const sweep = layerSweep(layer, w, h, anim);
+
+  if (settings.fill && triangles.length > 0) {
+    ctx.save();
+    ctx.fillStyle = lineColor;
+    for (const [i, j, k] of triangles) {
+      const lp = elementProgress(animG, (sweep[i] + sweep[j] + sweep[k]) / 3, 'fill');
+      if (lp <= 0) continue;
+      ctx.globalAlpha = 0.25 * easeOutCubic(lp);
+      const a = points[i], b = points[j], c = points[k];
+      ctx.beginPath();
+      ctx.moveTo(dx + a.x * dw, dy + a.y * dh);
+      ctx.lineTo(dx + b.x * dw, dy + b.y * dh);
+      ctx.lineTo(dx + c.x * dw, dy + c.y * dh);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  if (traces.length > 0) {
+    ctx.lineWidth = lw;
+    for (let t = 0; t < traces.length; t++) {
+      const [i, j] = traces[t];
+      const lp = elementProgress(animG, (sweep[i] + sweep[j]) / 2, 'line');
+      if (lp <= 0) continue;
+      const [aIdx, bIdx] = sweep[i] <= sweep[j] ? [i, j] : [j, i];
+      const a = points[aIdx], b = points[bIdx];
+      const drawP = easeOutCubic(lp);
+      const ax = dx + a.x * dw, ay = dy + a.y * dh;
+      const bx = dx + b.x * dw, by = dy + b.y * dh;
+      const claim = lineNuanceAssignment ? lineNuanceAssignment[t] : -1;
+      ctx.strokeStyle = claim >= 0 ? nuanceColors[claim] : lineColor;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax + (bx - ax) * drawP, ay + (by - ay) * drawP);
+      ctx.stroke();
+    }
+  }
+
+  for (let i = 0; i < points.length; i++) {
+    const lp = elementProgress(animG, sweep[i], 'dot');
+    if (lp <= 0) continue;
+    const r = baseDotR * Math.max(0, easeOutBack(lp));
+    if (r <= 0.05) continue;
+    const p = points[i];
+    const claim = nuanceAssignment ? nuanceAssignment[i] : -1;
+    const color = claim >= 0 ? nuanceColors[claim] : dotColor;
+    if (settings.dotOutline) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = outlineW;
+      ctx.fillStyle = background ?? '#FFFFFF';
+    } else {
+      ctx.fillStyle = color;
+    }
+    ctx.beginPath();
+    ctx.arc(dx + p.x * dw, dy + p.y * dh, r, 0, Math.PI * 2);
+    ctx.fill();
+    if (settings.dotOutline) ctx.stroke();
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SVG EXPORT — per-layer markup + composite (NodeCanvas.buildSvg + buildNodeSvg)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function buildLayerSvg(layer, w, h, elementScale, clipId) {
+  const { points, traces, triangles, settings, lineColor, dotColor, nuanceColors,
+          lineNuanceAssignment, nuanceAssignment, background } = layer;
+  const { dx, dy, dw, dh, baseDotR, lw, outlineW } = layerGeometry(layer, w, h, elementScale);
+  const px = (x) => dx + x * dw;
+  const py = (y) => dy + y * dh;
+  const parts = [];
+  const cullPad = Math.max(lw, baseDotR * 5.5);
+  const inFrame = (minX, maxX, minY, maxY) =>
+    maxX >= -cullPad && minX <= w + cullPad && maxY >= -cullPad && minY <= h + cullPad;
+  if (settings.fill && triangles.length > 0) {
+    parts.push(`<g inkscape:groupmode="layer" inkscape:label="Fills" clip-path="url(#${clipId})">`);
+    for (const [i, j, k] of triangles) {
+      const a = points[i], b = points[j], c = points[k];
+      if (!a || !b || !c) continue;
+      const xs = [px(a.x), px(b.x), px(c.x)];
+      const ys = [py(a.y), py(b.y), py(c.y)];
+      if (!inFrame(Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys))) continue;
+      parts.push(`<polygon points="${xs[0]},${ys[0]} ${xs[1]},${ys[1]} ${xs[2]},${ys[2]}" fill="${lineColor}" fill-opacity="0.25"/>`);
+    }
+    parts.push('</g>');
+  }
+  if (traces.length > 0) {
+    parts.push(`<g inkscape:groupmode="layer" inkscape:label="Traces" clip-path="url(#${clipId})">`);
+    for (let t = 0; t < traces.length; t++) {
+      const [i, j] = traces[t];
+      const a = points[i], b = points[j];
+      if (!a || !b) continue;
+      const x1 = px(a.x), y1 = py(a.y), x2 = px(b.x), y2 = py(b.y);
+      if (!inFrame(Math.min(x1, x2), Math.max(x1, x2), Math.min(y1, y2), Math.max(y1, y2))) continue;
+      const claim = lineNuanceAssignment ? lineNuanceAssignment[t] : -1;
+      const color = claim >= 0 ? nuanceColors[claim] : lineColor;
+      parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${lw}" stroke-linecap="butt"/>`);
+    }
+    parts.push('</g>');
+  }
+  if (points.length > 0) {
+    parts.push(`<g inkscape:groupmode="layer" inkscape:label="Dots" clip-path="url(#${clipId})">`);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const claim = nuanceAssignment ? nuanceAssignment[i] : -1;
+      const color = claim >= 0 ? nuanceColors[claim] : dotColor;
+      const cx = px(p.x), cy = py(p.y);
+      if (!inFrame(cx - baseDotR, cx + baseDotR, cy - baseDotR, cy + baseDotR)) continue;
+      const paint = settings.dotOutline
+        ? `fill="${background ?? '#FFFFFF'}" stroke="${color}" stroke-width="${outlineW}"`
+        : `fill="${color}"`;
+      parts.push(`<circle cx="${cx}" cy="${cy}" r="${baseDotR}" ${paint}/>`);
+    }
+    parts.push('</g>');
+  }
+  return parts.join('');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BOOT
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function parseParams() {
+  const q = new URLSearchParams(location.search);
+  let settings = null;
+  if (q.get('settings')) {
+    try { settings = JSON.parse(q.get('settings')); }
+    catch (e) { console.error('Bad ?settings JSON: ' + e.message); }
+  }
+  const ratio = q.get('ratio') || '3:2';
+  const [aw, ah] = ratio.split(':').map(Number);
+  return {
+    preset: q.get('preset'),
+    theme: q.get('theme'),
+    settings,
+    image: q.get('image') && q.get('image') !== 'none' ? q.get('image') : null,
+    ratioW: aw > 0 ? aw : 3,
+    ratioH: ah > 0 ? ah : 2,
+    seed: Number(q.get('seed') || 0),
+    size: Number(q.get('size') || 1600),
+    animate: q.get('animate') === '1',
+    origin: q.get('origin'),
+    jitter: q.get('jitter') != null ? Number(q.get('jitter')) : 0.3,
+    direction: q.get('direction') === 'in' ? 'in' : 'out',
+  };
+}
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => { console.error('Image failed to load: ' + src + ' — falling back to procedural field'); resolve(null); };
+    img.src = src;
+  });
+}
+
+window.__READY__ = (async () => {
+  const params = parseParams();
+  const frameAspect = params.ratioW / params.ratioH;
+
+  // Canvas dimensions: longest edge = size.
+  const canvas = document.getElementById('art');
+  const w = frameAspect >= 1 ? Math.round(params.size) : Math.round(params.size * frameAspect);
+  const h = frameAspect >= 1 ? Math.round(params.size / frameAspect) : Math.round(params.size);
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.aspectRatio = `${params.ratioW} / ${params.ratioH}`;
+
+  const comp = buildComposition(params);
+
+  // Source: image (sampled luma) or the procedural field.
+  let img = null;
+  if (params.image) img = await loadImage(params.image);
+  let map, sourceDims;
+  if (img) {
+    try {
+      map = buildSampleMapFromImage(img);
+      sourceDims = { w: img.naturalWidth, h: img.naturalHeight };
+      // shuffleImageOffsets equivalent: seeded pan within the cover-fit slack,
+      // unless the override pinned explicit offsets.
+      const imageAr = img.naturalWidth / img.naturalHeight;
+      const maxX = imageAr > frameAspect ? (imageAr / frameAspect - 1) / 2 : 0;
+      const maxY = imageAr < frameAspect ? (frameAspect / imageAr - 1) / 2 : 0;
+      const explicit = params.settings && (
+        ('imageOffsetX' in params.settings) || ('imageOffsetY' in params.settings) ||
+        (params.settings.nodeSettings && ('imageOffsetX' in params.settings.nodeSettings || 'imageOffsetY' in params.settings.nodeSettings))
+      );
+      if (!explicit) {
+        comp.parent.imageOffsetX = comp.offsetDrawX * maxX;
+        comp.parent.imageOffsetY = comp.offsetDrawY * maxY;
+      }
+    } catch (e) {
+      // Canvas tainted (file:// without --allow-file-access-from-files) or decode issue.
+      console.error('Image sampling failed (' + e.message + ') — falling back to procedural field');
+      img = null;
+    }
+  }
+  if (!img) {
+    map = buildProceduralSampleMap(frameAspect, params.seed | 0);
+    sourceDims = { w, h }; // same aspect as the frame → identity fit, offsets are no-ops
+    comp.parent.imageOffsetX = 0;
+    comp.parent.imageOffsetY = 0;
+  }
+
+  // Build every layer's render data in render-stack order (bottom-first).
+  const stack = computeStack(comp.subs.length, comp.parentStackIndex);
+  const layers = stack.map((id) => buildLayerData(
+    id === -1 ? comp.parent : comp.subs[id],
+    map, sourceDims, w, h, comp.vignettes, comp.palette, comp.backgroundColorKey,
+  ));
+
+  const bg = comp.palette[comp.backgroundColorKey];
+  const ctx = canvas.getContext('2d');
+
+  const drawAll = (animG, anim) => {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+    for (const layer of layers) {
+      if (animG === null) drawLayerStatic(ctx, layer, w, h, comp.elementScale);
+      else drawLayerAnimated(ctx, layer, w, h, comp.elementScale, animG, anim);
+    }
+  };
+
+  // SVG export: background rect + each layer's groups, in render-stack order.
+  window.exportSvg = () => {
+    const clipId = 'frame-clip';
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
+      `<defs><clipPath id="${clipId}"><rect x="0" y="0" width="${w}" height="${h}"/></clipPath></defs>` +
+      `<rect x="0" y="0" width="100%" height="100%" fill="${bg}"/>` +
+      layers.map((l) => buildLayerSvg(l, w, h, comp.elementScale, clipId)).join('') +
+      '</svg>'
+    );
+  };
+  window.__COMPOSITION__ = {
+    preset: comp.presetName, theme: comp.themeName, seed: params.seed,
+    backgroundColorKey: comp.backgroundColorKey, vignettes: comp.vignettes,
+    parent: comp.parent, subs: comp.subs, parentStackIndex: comp.parentStackIndex,
+  };
+
+  if (!params.animate) {
+    drawAll(null, null);
+    return true;
+  }
+
+  // Animated wash reveal, looping (lead → sweep → tail → short hold → restart).
+  let ox = comp.originDrawX, oy = comp.originDrawY;
+  if (params.origin) {
+    const [x, y] = params.origin.split(',').map(Number);
+    if (Number.isFinite(x)) ox = clamp01(x);
+    if (Number.isFinite(y)) oy = clamp01(y);
+  }
+  const anim = { originX: ox, originY: oy, jitter: clamp01(params.jitter), direction: params.direction };
+  const totalMs = ANIM.leadMs + ANIM.sweepMs + ANIM.tailMs;
+  const HOLD_MS = 600; // hold the finished artwork before looping
+  const tick = (ts) => {
+    const elapsed = ts % (totalMs + HOLD_MS);
+    if (elapsed >= totalMs) {
+      drawAll(null, null); // finished still during the hold
+    } else {
+      const swept = Math.max(0, elapsed - ANIM.leadMs);
+      drawAll(clamp01(swept / ANIM.sweepMs), anim);
+    }
+    requestAnimationFrame(tick);
+  };
+  drawAll(0, anim); // first frame: bare background wash start
+  requestAnimationFrame(tick);
+  return true;
+})().catch((e) => {
+  console.error('node-cover failed: ' + (e && e.message));
+  const div = document.createElement('div');
+  div.id = 'err';
+  div.textContent = 'node-cover failed: ' + (e && e.stack || e);
+  document.body.appendChild(div);
+  return true;
+});
+</script>
+</body>
+</html>
