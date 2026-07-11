@@ -76,9 +76,10 @@ The generators are ingredients — combine them:
 - **Data-card chart → slide or document figure.** Export the pure chart (omit
   title/logo params) and embed it.
 - **Diagram SVG → slide, doc, or page.** SVG scales cleanly into any artifact.
-- **Deck JSON → PDF via the website.** `deck-builder/` authors slide JSON
-  (you write it — no external LLM needed), encodes it to a `/view#hash` URL,
-  and prints via the running website.
+- **Deck JSON → vector PDF, standalone.** `deck-builder/` authors slide JSON
+  (you write it — no external LLM needed), encodes it to a hash, and renders
+  it with the bundled `tool/deck.html` — browser preview + print, no website
+  needed.
 
 Keep the brand rules while composing: generated art is an **accent behind
 generous paper, not a loud full-bleed fill**; one accent color per artifact;
