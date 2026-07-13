@@ -45,6 +45,9 @@ caveats. Read it before rendering. Originals in `tool/reference/`.
 - Keep it an **accent**: covers and backgrounds should let paper breathe —
   choose presets/settings with open space rather than dense full-field
   texture when the art sits behind text.
+- **Don't run text over the art.** Text sits on clear paper; the art can
+  graze the text block's edges, but if it lands fully behind the copy, resize
+  or reposition it (smaller, offset, bleeding off an edge) until it clears.
 - The animated reveal is an intro transition, not a loop — use it to bring a
   cover in, then rest on the still.
 
@@ -55,5 +58,6 @@ caveats. Read it before rendering. Originals in `tool/reference/`.
 ## Don'ts
 
 ❌ Off-palette colors (themes only) · ❌ dense texture behind body text ·
+❌ art fully behind text (edge overlap ok — resize to avoid collisions) ·
 ❌ stretching the art (re-render at the right ratio instead) · ❌ using it
 where the Tusi figure is the right motif (see `../animation`).

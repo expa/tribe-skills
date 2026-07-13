@@ -40,7 +40,9 @@ alternative (SlideForge share URLs on tribe.ai, raster export via
 - **Cover art & backgrounds**: the `cover` layout carries the static Tusi
   vector figure; for extra art, export from `../animation` or
   `../article-cover` and reference hosted image URLs — accents behind
-  generous paper, not loud full-bleed fills.
+  generous paper, not loud full-bleed fills. Never sit the figure/art fully
+  behind text — edge overlap is fine, but resize or offset the art so copy
+  reads on clear surface.
 
 ## Fidelity notes
 

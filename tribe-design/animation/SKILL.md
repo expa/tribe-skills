@@ -42,6 +42,10 @@ renders. `tool/reference/` holds the original site sources.
 - Drop the transparent PNG behind content in a slide, card, or document — off
   to one side or bleeding off an edge, an accent behind generous paper, never
   a loud centered fill.
+- **Never sit the figure fully behind text.** Text belongs on clear paper; a
+  slight overlap where the figure's edge grazes the text block is fine, but if
+  they collide, resize or reposition the figure (smaller, further off-edge)
+  rather than letting copy run over the lines and dots.
 - The WEBM works as a moving slide/section background — keep it quiet.
 - Wide compositions (home/model presets, `circleSize` ≥ 60) intentionally
   bleed past a square viewport — render at e.g. 1600×1000 to frame the
@@ -55,5 +59,6 @@ renders. `tool/reference/` holds the original site sources.
 ## Don'ts
 
 ❌ Recoloring the figure outside the brand palette · ❌ using it as dense
-full-bleed texture · ❌ mixing it with other decorative animation · ❌ bouncy
+full-bleed texture · ❌ the figure fully behind text (edge grazing ok — resize
+to avoid collisions) · ❌ mixing it with other decorative animation · ❌ bouncy
 or sped-up motion (the figure is slow and unhurried).

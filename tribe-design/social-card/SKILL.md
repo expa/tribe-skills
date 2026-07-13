@@ -60,6 +60,8 @@ brand fonts — duplicate the `.frame`, change dims and copy.
 Background/figure art: export from `../animation` (Tusi still) or
 `../article-cover` (generative art) and place it behind generous paper —
 subtle, off to one side or bleeding off an edge, never centered clip-art.
+Never fully behind the text: a slight overlap at the edges is fine, but
+resize or reposition the art so copy sits on clear surface.
 
 ## Examples
 
