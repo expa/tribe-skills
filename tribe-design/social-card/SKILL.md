@@ -1,3 +1,8 @@
+---
+name: tribe-design-social-card
+description: Generate on-brand Tribe social graphics with custom text, official layouts, surfaces, accents, and typography. Use for quote cards, announcements, statement cards, statistic cards, partner lockups, OG images, LinkedIn graphics, and other social assets.
+---
+
 # Tribe Design — Social Card
 
 On-brand social graphics with custom text — quote cards, statement/announcement

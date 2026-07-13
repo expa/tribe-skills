@@ -1,3 +1,8 @@
+---
+name: tribe-design-documents
+description: Create polished Tribe-branded long-form documents as self-contained, print-ready HTML. Use for Tribe one-pagers, proposals, reports, briefs, case studies, and documents that must follow the official visual system and writing voice.
+---
+
 # Tribe Design — Documents
 
 On-brand long-form documents — one-pagers, proposals, reports, briefs,

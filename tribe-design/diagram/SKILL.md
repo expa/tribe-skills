@@ -1,3 +1,8 @@
+---
+name: tribe-design-diagram
+description: Create deterministic Tribe-branded system diagrams and flowcharts from JSON, with SVG and PNG output. Use for architecture diagrams, workflows, decision flows, system maps, process visuals, or diagrams embedded in Tribe decks, documents, and web pages.
+---
+
 # Tribe Design — System Diagram
 
 Tribe-branded system diagrams and flowcharts from JSON — you author nodes +

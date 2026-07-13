@@ -1,3 +1,8 @@
+---
+name: tribe-design-animation
+description: Generate Tribe's Tusi orbital line-and-dot brand motif as static PNG artwork or animated WEBM. Use for Tribe hero art, slide or section backgrounds, branded motion, or restrained decorative accents that must follow the official Tribe visual system.
+---
+
 # Tribe Design — Animation (Tusi figure)
 
 The Tusi orbital line-and-dot figure — the brand's living motif. Use it as

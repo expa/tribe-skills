@@ -1,3 +1,8 @@
+---
+name: tribe-design-deck-builder
+description: Create Tribe-branded 16:9 presentations from JSON and export them as vector PDFs. Use for Tribe pitch decks, proposals, case studies, presentations, slide systems, or any deck that should follow Tribe's layouts, visual identity, and writing voice.
+---
+
 # Tribe Design — Deck Builder
 
 Presentations, pitches, case studies, and proposals as 16:9 slide decks.
