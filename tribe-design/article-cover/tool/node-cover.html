@@ -21,6 +21,15 @@
     ?origin=<x,y>              wash origin 0-1 fractions (default: seeded random)
     ?jitter=<0-1>              wash front raggedness (default 0.3)
     ?direction=out|in          wash direction (default out)
+    ?svg=<path|url>            vector layer drawn on top, centered + contain-fit;
+                               the node field is masked so dots/lines keep clear
+                               of the shape (harness addition, like the site's
+                               svgLayer but with field avoidance)
+    ?svgScale=<0-1>            svg contain-fit box as a fraction of the frame (default 0.38)
+    ?svgColor=auto|<slot|css>  tint: 'auto' picks ink/paper by background luminance;
+                               or a palette slot (color1…) or CSS color (%23-encode hex)
+    ?svgPad=<0-1>              keep-out padding around the shape, fraction of the
+                               short frame edge (default 0.05)
 
   window.__READY__  — Promise; resolves after the still is painted (or, for
                       animate=1, once the reveal loop has started).
@@ -674,7 +683,7 @@ function buildComposition(params) {
 
 /* sourceDims: the natural size of whatever feeds computeFitRect (image natural
    dims, or the frame itself for the procedural field). */
-function buildLayerData(settings, map, sourceDims, frameW, frameH, vignettes, palette, backgroundColorKey) {
+function buildLayerData(settings, map, sourceDims, frameW, frameH, vignettes, palette, backgroundColorKey, keepOut) {
   let points = samplePoints(map, settings);
 
   const activeVignettes = vignettes.filter((v) => v.amount > 0);
@@ -689,7 +698,21 @@ function buildLayerData(settings, map, sourceDims, frameW, frameH, vignettes, pa
     });
   }
 
-  const traces = computeRouting(points, settings, map.width);
+  // SVG-layer field avoidance: drop points inside the dilated silhouette.
+  if (keepOut) {
+    const { dx, dy, dw, dh } = computeFitRect(sourceDims.w, sourceDims.h, frameW, frameH, settings);
+    points = points.filter((p) => !keepOut(dx + p.x * dw, dy + p.y * dh));
+  }
+
+  let traces = computeRouting(points, settings, map.width);
+  // …and traces whose midpoint would still cross the shape between kept points.
+  if (keepOut && traces.length) {
+    const { dx, dy, dw, dh } = computeFitRect(sourceDims.w, sourceDims.h, frameW, frameH, settings);
+    traces = traces.filter(([i, j]) => {
+      const a = points[i], b = points[j];
+      return !keepOut(dx + ((a.x + b.x) / 2) * dw, dy + ((a.y + b.y) / 2) * dh);
+    });
+  }
   const triangles = settings.fill && traces.length > 0 ? computeTriangles(points.length, traces) : [];
 
   // Nuance assignments: which pass (index) claims each trace / dot; -1 = base.
@@ -1010,6 +1033,10 @@ function parseParams() {
     origin: q.get('origin'),
     jitter: q.get('jitter') != null ? Number(q.get('jitter')) : 0.3,
     direction: q.get('direction') === 'in' ? 'in' : 'out',
+    svg: q.get('svg') && q.get('svg') !== 'none' ? q.get('svg') : null,
+    svgScale: q.get('svgScale') != null ? Number(q.get('svgScale')) : 0.38,
+    svgColor: q.get('svgColor') || 'auto',
+    svgPad: q.get('svgPad') != null ? Number(q.get('svgPad')) : 0.05,
   };
 }
 
@@ -1021,6 +1048,113 @@ function loadImage(src) {
     img.onerror = () => { console.error('Image failed to load: ' + src + ' — falling back to procedural field'); resolve(null); };
     img.src = src;
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SVG LAYER (harness addition) — a vector drawn on top of the composition,
+   tinted to one color and contain-fit centered (port of the site's
+   svgLayer.ts), PLUS field avoidance: sampled dots and trace midpoints
+   inside the shape's dilated silhouette are dropped, so the generated field
+   flows around the vector instead of colliding with it.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function loadText(src) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', src);
+    xhr.onload = () => resolve(xhr.responseText);
+    xhr.onerror = () => { console.error('SVG failed to load: ' + src); resolve(null); };
+    try { xhr.send(); } catch (e) { console.error('SVG failed to load: ' + src + ' — ' + e.message); resolve(null); }
+  });
+}
+
+// svgLayer.ts ports: viewBox parse, inner markup, single-tint recolor.
+function svgParseViewBox(raw) {
+  const vb = /viewBox\s*=\s*"([^"]+)"/.exec(raw);
+  if (vb) {
+    const p = vb[1].trim().split(/[\s,]+/).map(Number);
+    if (p.length === 4 && p.every((n) => !Number.isNaN(n)) && p[2] > 0 && p[3] > 0) {
+      return { x: p[0], y: p[1], w: p[2], h: p[3] };
+    }
+  }
+  const wM = /width\s*=\s*"([\d.]+)/.exec(raw);
+  const hM = /height\s*=\s*"([\d.]+)/.exec(raw);
+  const w = wM ? Number(wM[1]) : 100;
+  const h = hM ? Number(hM[1]) : 100;
+  return { x: 0, y: 0, w: w > 0 ? w : 100, h: h > 0 ? h : 100 };
+}
+function svgInnerMarkup(raw) {
+  return raw.replace(/^[\s\S]*?<svg[^>]*>/i, '').replace(/<\/svg>\s*$/i, '');
+}
+function svgTint(inner, color) {
+  return inner
+    .replace(/fill="(?!none")[^"]*"/gi, `fill="${color}"`)
+    .replace(/stroke="(?!none")[^"]*"/gi, `stroke="${color}"`)
+    .replace(/fill:\s*(?!none)[^;"']+/gi, `fill:${color}`)
+    .replace(/stroke:\s*(?!none)[^;"']+/gi, `stroke:${color}`);
+}
+function buildSvgLayerMarkup(raw, color, scale, w, h) {
+  const vb = svgParseViewBox(raw);
+  const inner = svgTint(svgInnerMarkup(raw), color);
+  const boxW = w * scale;
+  const boxH = h * scale;
+  const s = Math.min(boxW / vb.w, boxH / vb.h);
+  const dw = vb.w * s;
+  const dh = vb.h * s;
+  const tx = (w - dw) / 2 - vb.x * s;
+  const ty = (h - dh) / 2 - vb.y * s;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">` +
+    `<g transform="translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})" fill="${color}">${inner}</g>` +
+    `</svg>`
+  );
+}
+
+function svgMarkupToImage(markup) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => { console.error('SVG layer failed to rasterize'); resolve(null); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  });
+}
+
+function hexLuma(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return 255;
+  const n = parseInt(m[1], 16);
+  return 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+}
+function resolveSvgColor(param, comp) {
+  if (param && param !== 'auto') return comp.palette[param] ?? param;
+  const bg = comp.palette[comp.backgroundColorKey];
+  return hexLuma(bg) > 140 ? '#06141B' : '#FAFAF8';
+}
+
+/* Keep-out test from the rasterized layer: the silhouette dilated by padPx.
+   Mask is built at quarter resolution; dilation = the shape stamped along a
+   ring of offsets. Returns (fx, fy) → true when a frame-space point is inside. */
+function buildKeepOut(svgImg, w, h, padPx) {
+  const SCALE = 4;
+  const mw = Math.max(1, Math.round(w / SCALE));
+  const mh = Math.max(1, Math.round(h / SCALE));
+  const c = document.createElement('canvas');
+  c.width = mw; c.height = mh;
+  const mctx = c.getContext('2d', { willReadFrequently: true });
+  const pad = padPx / SCALE;
+  mctx.drawImage(svgImg, 0, 0, mw, mh);
+  const steps = 16;
+  for (let s = 0; s < steps; s++) {
+    const a = (s / steps) * Math.PI * 2;
+    mctx.drawImage(svgImg, Math.cos(a) * pad, Math.sin(a) * pad, mw, mh);
+    mctx.drawImage(svgImg, Math.cos(a) * pad * 0.5, Math.sin(a) * pad * 0.5, mw, mh);
+  }
+  const data = mctx.getImageData(0, 0, mw, mh).data;
+  return (fx, fy) => {
+    const x = Math.round(fx / SCALE), y = Math.round(fy / SCALE);
+    if (x < 0 || y < 0 || x >= mw || y >= mh) return false;
+    return data[(y * mw + x) * 4 + 3] > 8;
+  };
 }
 
 window.__READY__ = (async () => {
@@ -1071,11 +1205,31 @@ window.__READY__ = (async () => {
     comp.parent.imageOffsetY = 0;
   }
 
+  // Optional SVG layer: tint + contain-fit, rasterize, build the keep-out mask.
+  let svgLayer = null;
+  let keepOut = null;
+  if (params.svg) {
+    const raw = await loadText(params.svg);
+    if (raw && /<svg[\s>]/i.test(raw)) {
+      const color = resolveSvgColor(params.svgColor, comp);
+      const scale = Math.min(Math.max(params.svgScale || 0.38, 0.02), 1);
+      const markup = buildSvgLayerMarkup(raw, color, scale, w, h);
+      const svgImg = await svgMarkupToImage(markup);
+      if (svgImg) {
+        svgLayer = { img: svgImg, markup };
+        const padPx = Math.max(0, params.svgPad) * Math.min(w, h);
+        keepOut = buildKeepOut(svgImg, w, h, padPx);
+      }
+    } else if (raw != null) {
+      console.error('svg param is not an SVG document — ignored');
+    }
+  }
+
   // Build every layer's render data in render-stack order (bottom-first).
   const stack = computeStack(comp.subs.length, comp.parentStackIndex);
   const layers = stack.map((id) => buildLayerData(
     id === -1 ? comp.parent : comp.subs[id],
-    map, sourceDims, w, h, comp.vignettes, comp.palette, comp.backgroundColorKey,
+    map, sourceDims, w, h, comp.vignettes, comp.palette, comp.backgroundColorKey, keepOut,
   ));
 
   const bg = comp.palette[comp.backgroundColorKey];
@@ -1089,6 +1243,7 @@ window.__READY__ = (async () => {
       if (animG === null) drawLayerStatic(ctx, layer, w, h, comp.elementScale);
       else drawLayerAnimated(ctx, layer, w, h, comp.elementScale, animG, anim);
     }
+    if (svgLayer) ctx.drawImage(svgLayer.img, 0, 0, w, h);
   };
 
   // SVG export: background rect + each layer's groups, in render-stack order.
@@ -1099,6 +1254,7 @@ window.__READY__ = (async () => {
       `<defs><clipPath id="${clipId}"><rect x="0" y="0" width="${w}" height="${h}"/></clipPath></defs>` +
       `<rect x="0" y="0" width="100%" height="100%" fill="${bg}"/>` +
       layers.map((l) => buildLayerSvg(l, w, h, comp.elementScale, clipId)).join('') +
+      (svgLayer ? svgInnerMarkup(svgLayer.markup) : '') +
       '</svg>'
     );
   };

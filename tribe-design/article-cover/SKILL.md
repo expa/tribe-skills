@@ -31,6 +31,9 @@ node ../scripts/render.mjs --html tool/node-cover.html \
 - `?image=<path|URL>` — sample a source photo into the field
   (`tool/samples/` has a few; the full set lives in the website repo under
   `public/node-generator/samples/`).
+- `?svg=<path|URL>` — a vector layer (logo, symbol) tinted and centered on
+  top, with the node field automatically masked so dots and traces keep
+  clear of the shape (`svgScale`, `svgColor`, `svgPad` tune it).
 - `?ratio=1:1|3:2|2:3|16:9|9:16`, `?seed=<n>`, `?size=<longest edge>`.
 
 **`tool/NOTES.md` is the full reference** — presets, themes, settings schema,

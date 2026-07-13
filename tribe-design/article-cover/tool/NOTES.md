@@ -21,6 +21,10 @@ SVG via `window.exportSvg()`) and the animated "wash" reveal (WEBM).
 | `origin` | `x,y` (0-1 fractions) | seeded random | Wash origin (animate only). |
 | `jitter` | 0-1 | `0.3` | Raggedness of the wash front (animate only). |
 | `direction` | `out` `in` | `out` | Wash spreads from the origin, or converges onto it. |
+| `svg` | path (relative to this file) or URL | — | Vector layer drawn ON TOP, tinted to one color and contain-fit centered (port of the site's `svgLayer.ts`) — **with field avoidance** (harness addition): sampled dots and trace midpoints inside the shape's dilated silhouette are dropped, so the field flows around the vector. Works in stills, the wash reveal, and `exportSvg()`. |
+| `svgScale` | 0-1 | `0.38` | The svg's contain-fit box as a fraction of the frame. |
+| `svgColor` | `auto`, palette slot (`color1`…), or CSS color | `auto` | Tint. `auto` picks ink `#06141B` on light grounds / paper `#FAFAF8` on dark. Hex must be URL-encoded (`%2306141B`). |
+| `svgPad` | 0-1 | `0.05` | Keep-out padding around the shape, as a fraction of the short frame edge. |
 
 `window.__READY__` is a Promise that resolves after the still is painted (for
 `animate=1`, once the loop has started) — `render.mjs` awaits it automatically.
@@ -134,6 +138,10 @@ node scripts/render.mjs --html article-cover/tool/node-cover.html \
 - **WEBM capture** records the page in real time from load; the loop's hold
   frame (finished artwork) fills any leftover duration. For a clean single
   reveal use `--duration 3800`.
-- **Not ported** (not needed headlessly): user-uploaded SVG overlay layers
-  (`svgLayer.ts`), clipboard/zip/download plumbing (`export.ts` UI paths), the
-  2160p renderScale bump (use `?size` instead), and the React studio UI.
+- **SVG layers**: the site's `svgLayer.ts` is ported as `?svg=` — and goes
+  further: the site only overlays the vector, while the harness also masks the
+  node field away from it (see the params table). Note the site app has no
+  field-avoidance; a composition using `?svg` won't reproduce 1:1 in the studio.
+- **Not ported** (not needed headlessly): clipboard/zip/download plumbing
+  (`export.ts` UI paths), the 2160p renderScale bump (use `?size` instead),
+  and the React studio UI.
