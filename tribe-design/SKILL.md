@@ -64,6 +64,13 @@ node scripts/render.mjs --html <file>|--url <url> --pdf out.pdf               # 
 
 Each generator's `tool/NOTES.md` documents its parameters and exact commands.
 
+PNG stills of canvas tools are captured straight from the canvas backing
+store with high-quality resampling (never a screenshot of the CSS-scaled
+element), so exports stay fully anti-aliased at any `--scale`. If an export
+ever looks pixelated, pass `--selector canvas` so this path is used, and
+check the tool's internal render scale (`RENDER_SCALE` / `?size`) is ≥ the
+output size.
+
 ## Composing artifacts
 
 The generators are ingredients — combine them:

@@ -26,6 +26,12 @@
  * Readiness: after load + fonts, if the page defines `window.__READY__`
  * (a boolean or a Promise), we await it before capturing.
  *
+ * Canvas capture: when --selector matches a <canvas>, pixels are read straight
+ * from the canvas backing store (toDataURL) and resampled to the target size
+ * (CSS size × --scale) with high-quality stepped downscaling. Screenshotting
+ * the CSS-scaled element instead would let the compositor downsample with
+ * cheap bilinear filtering — that's what makes text/graphics look pixelated.
+ *
  * Setup (once): `npm install` in this folder (installs playwright-core; no
  * browser download — it finds the Playwright browser cache or desktop Chrome).
  * If neither exists: `npx playwright install chromium`.
@@ -104,7 +110,19 @@ if (args.query) target += (target.includes('?') ? '&' : '?') + args.query
 
 // --allow-file-access-from-files: file:// pages may read sibling file:// images into
 // canvas without tainting it (needed by tools that sample local images, e.g. node-cover).
-const browser = await chromium.launch({ executablePath, headless: true, args: ['--allow-file-access-from-files'] })
+// Font flags: headless (esp. Linux) otherwise hints/subpixel-renders type for an LCD,
+// which exports as jagged or color-fringed text in PNGs and PDFs.
+const browser = await chromium.launch({
+  executablePath,
+  headless: true,
+  args: [
+    '--allow-file-access-from-files',
+    '--font-render-hinting=none',
+    '--disable-lcd-text',
+    '--force-color-profile=srgb',
+    '--hide-scrollbars',
+  ],
+})
 const context = await browser.newContext({
   viewport: { width, height },
   deviceScaleFactor: scale,
@@ -132,7 +150,57 @@ if (args.out) {
   const shotOpts = { path: args.out.endsWith('.webp') ? args.out.replace(/\.webp$/, '.png') : args.out, type: 'png', omitBackground: Boolean(args.transparent) }
   if (args.selector) {
     const el = await page.waitForSelector(args.selector, { timeout: 10_000 })
-    await el.screenshot(shotOpts)
+    const isCanvas = await el.evaluate((n) => n.tagName === 'CANVAS')
+    if (isCanvas) {
+      // Read pixels straight from the backing store: a canvas is often drawn
+      // larger than its CSS size (e.g. a 3× export buffer), and an element
+      // screenshot would re-sample the compositor's cheap bilinear downscale
+      // of it — visibly aliased text/edges. Resample here with stepped
+      // high-quality drawImage instead, targeting CSS size × --scale.
+      const dataUrl = await el.evaluate(async (canvas, opts) => {
+        const targetW = Math.max(1, Math.round(canvas.clientWidth * opts.scale))
+        const targetH = Math.max(1, Math.round(canvas.clientHeight * opts.scale))
+        let src = canvas
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          let w = canvas.width
+          let h = canvas.height
+          // Halve until within 2× of the target (bilinear stays accurate ≤2×),
+          // then draw the final size.
+          while (w / 2 > targetW && h / 2 > targetH) {
+            w = Math.round(w / 2)
+            h = Math.round(h / 2)
+            const step = document.createElement('canvas')
+            step.width = w
+            step.height = h
+            const sctx = step.getContext('2d')
+            sctx.imageSmoothingEnabled = true
+            sctx.imageSmoothingQuality = 'high'
+            sctx.drawImage(src, 0, 0, w, h)
+            src = step
+          }
+          const out = document.createElement('canvas')
+          out.width = targetW
+          out.height = targetH
+          const octx = out.getContext('2d')
+          if (!opts.transparent) {
+            const bg = getComputedStyle(document.body).backgroundColor
+            if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+              octx.fillStyle = bg
+              octx.fillRect(0, 0, targetW, targetH)
+            }
+          }
+          octx.imageSmoothingEnabled = true
+          octx.imageSmoothingQuality = 'high'
+          octx.drawImage(src, 0, 0, targetW, targetH)
+          src = out
+        }
+        return src.toDataURL('image/png')
+      }, { scale, transparent: Boolean(args.transparent) })
+      const { writeFileSync } = await import('node:fs')
+      writeFileSync(shotOpts.path, Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64'))
+    } else {
+      await el.screenshot(shotOpts)
+    }
   } else {
     await page.screenshot({ ...shotOpts, fullPage: false })
   }

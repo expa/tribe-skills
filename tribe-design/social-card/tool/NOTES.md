@@ -33,9 +33,10 @@ node scripts/render.mjs \
   size is the format's native dims (e.g. 1080×1080), so pick a viewport at
   least that big (`--width 1200 --height 2000` covers every format;
   element screenshots also work if the element overflows the viewport).
-- Output PNG size = native dims × `--scale` (render.mjs deviceScaleFactor,
-  default 2 → 2160×2160 for a square). The canvas backing store is 3× either
-  way, so `--scale 1` (1080px) is already sharp; use `--scale 2` for retina.
+- Output PNG size = native dims × `--scale` (default 2 → 2160×2160 for a
+  square). render.mjs reads canvas pixels straight from the 3× backing store
+  and downscales with high-quality resampling, so both `--scale 1` (1080px)
+  and `--scale 2` (retina) come out fully anti-aliased.
 
 ## Parameters
 

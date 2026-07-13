@@ -118,7 +118,13 @@ if (!executablePath) {
   process.exit(1);
 }
 
-const browser = await chromium.launch({ executablePath, headless: true });
+// Font flags: headless (esp. Linux) otherwise hints/subpixel-renders type for an
+// LCD, which exports as jagged or color-fringed text in the slide PNGs.
+const browser = await chromium.launch({
+  executablePath,
+  headless: true,
+  args: ["--font-render-hinting=none", "--disable-lcd-text", "--force-color-profile=srgb", "--hide-scrollbars"],
+});
 const tmp = mkdtempSync(path.join(tmpdir(), "tribe-deck-"));
 try {
   // -------------------------------------------------------------- pass 1: shots

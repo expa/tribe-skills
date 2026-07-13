@@ -33,8 +33,10 @@ node scripts/render.mjs \
 - `--selector canvas` clips to the card. Canvas CSS size = native format dims,
   so use a viewport at least that big (`--width 1700 --height 1400` covers
   every format).
-- Output PNG size = native dims × `--scale` (render.mjs default 2). The
-  backing store is 2× regardless, so `--scale 1` is already sharp.
+- Output PNG size = native dims × `--scale` (render.mjs default 2).
+  render.mjs reads canvas pixels straight from the 2× backing store and
+  downscales with high-quality resampling, so `--scale 1` is also fully
+  anti-aliased.
 
 ## Parameters
 

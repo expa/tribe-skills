@@ -110,10 +110,12 @@ node scripts/render.mjs --html article-cover/tool/node-cover.html \
 
 ## Caveats
 
-- **PNG resolution**: `render.mjs` screenshots the canvas at its CSS size ×
+- **PNG resolution**: `render.mjs` outputs the canvas at its CSS size ×
   `--scale` (default 2), not at `?size`. For a ~2400px-wide export use
   `--width 1200 --height 800` (3:2) with the default scale. `?size` sets the
-  internal render resolution; keep it ≥ the screenshot size for sharpness.
+  internal render resolution; keep it ≥ the output size for sharpness (the
+  downscale from `?size` is done with high-quality resampling straight from
+  the canvas backing store, so oversizing costs nothing in quality).
 - **file:// image sampling** needs Chromium's `--allow-file-access-from-files`
   (canvas taint). `scripts/render.mjs` now passes it. If an image can't be
   sampled or fails to load, the harness logs a console error and falls back to
