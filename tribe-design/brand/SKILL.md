@@ -1,3 +1,8 @@
+---
+name: tribe-design-brand
+description: Apply and review Tribe AI's official visual identity, including colors, typography, logos, spacing, surfaces, imagery, and composition. Use before creating or evaluating any Tribe-branded web UI, graphic, slide, document, diagram, email, or other visual artifact.
+---
+
 # Tribe Design — Brand
 
 The visual identity every other tribe-design sub-skill builds on. Read this

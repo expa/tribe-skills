@@ -1,3 +1,8 @@
+---
+name: tribe-design-data-card
+description: Generate on-brand Tribe chart images from structured data, including bar charts, line charts, titles, sources, and logos. Use for standalone Tribe data cards or charts embedded in presentations, documents, reports, social graphics, and web content.
+---
+
 # Tribe Design — Data Card
 
 On-brand chart images from structured data — bar or line charts with optional

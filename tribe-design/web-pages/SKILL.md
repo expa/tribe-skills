@@ -1,3 +1,8 @@
+---
+name: tribe-design-web-pages
+description: Build and review pages in the Tribe website repository using its design system, Payload CMS patterns, components, and Next.js conventions. Use for Tribe website frontend work, page composition, CMS-driven content, responsive behavior, accessibility, and web implementation.
+---
+
 # Tribe Design — Web Pages
 
 For building pages in the Tribe website repo. **Read `../brand/SKILL.md` first** for

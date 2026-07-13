@@ -1,3 +1,8 @@
+---
+name: tribe-design-article-cover
+description: Generate seeded abstract Tribe artwork from node, dot, and trace fields, optionally sampling a source image. Use for Tribe article covers, deck cover art, document mastheads, section backgrounds, branded still images, or animated reveal transitions.
+---
+
 # Tribe Design — Article Cover (node generator)
 
 Abstract generative artwork in the Tribe style — node/dot/trace fields drawn

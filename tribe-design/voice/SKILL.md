@@ -1,3 +1,8 @@
+---
+name: tribe-design-voice
+description: Write and review copy in Tribe AI's official voice across concise website language and long-form editorial. Use for Tribe headlines, section copy, calls to action, microcopy, social cards, presentations, documents, articles, and any branded writing.
+---
+
 # Tribe Design — Voice
 
 How Tribe AI writes. Use for ANY copy in a Tribe artifact — website sections,
