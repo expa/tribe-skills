@@ -30,6 +30,10 @@ node scripts/render.mjs \
 - Pass params as ONE URI-encoded JSON object in the `params` query key
   (the `node -e … encodeURIComponent(JSON.stringify(…))` trick is the
   reliable way to encode it, including the `\n` newlines in `data`).
+- **Copy containing apostrophes or quotes** breaks the inline single-quoted
+  `node -e` trick. Write the params JSON to a file first, then encode from
+  the file:
+  `PARAMS=$(node -e 'console.log(encodeURIComponent(require("fs").readFileSync(process.argv[1],"utf8")))' params.json)`
 - `--selector canvas` clips to the card. Canvas CSS size = native format dims,
   so use a viewport at least that big (`--width 1700 --height 1400` covers
   every format).

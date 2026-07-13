@@ -113,6 +113,15 @@ automatically per key.
 
 ## Caveats
 
+- **Feedback loops / back-edges break auto-layout.** The ranking pass assumes
+  an acyclic flow; any cycle (e.g. a "verify → iterate → back to input" edge)
+  scrambles node placement across the whole canvas. For diagrams with a loop,
+  use FULL manual layout (every node gets x/y/w/h) and route the loop edge
+  with `waypoints` + `fromSide`/`toSide`.
+- **The export viewBox hugs NODES only** (+48px margin) — edge routes are not
+  measured, so a waypoint routed outside the node bounding box gets clipped
+  out of the SVG/PNG. Route loop edges through corridors BETWEEN nodes (e.g.
+  the gap between two rows), not around the outside of the diagram.
 - Text metrics are char-width estimates (no DOM), so extreme labels can wrap
   slightly differently than the site editor; keep labels short.
 - `title` is accepted but not rendered into the SVG.

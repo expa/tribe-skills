@@ -30,6 +30,9 @@ authoring.
   numbered step callouts.
 - **Layout**: omit x/y everywhere and list nodes in natural flow order —
   auto-layout does the rest. Manual layout = give EVERY node x/y (+ w/h).
+  Auto-layout needs an acyclic flow: for feedback loops ("iterate", retries),
+  go manual and route the loop edge with waypoints through a gap between
+  nodes (see `tool/NOTES.md` caveats).
 
 ## Using the output
 
