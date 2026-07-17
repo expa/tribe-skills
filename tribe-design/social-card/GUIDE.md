@@ -7,7 +7,7 @@ description: Generate on-brand Tribe social graphics with custom text, official 
 
 On-brand social graphics with custom text — quote cards, statement/announcement
 cards, stat cards, partner lockups — exported as static images. **Read
-`../brand/SKILL.md` first.**
+`../brand/GUIDE.md` first.**
 
 ## The generator (preferred path)
 
@@ -33,7 +33,7 @@ caveats. Read it before rendering.
 
 Layout, fonts, wrapping, auto-shrink, surface-aware ink/logo inversion are all
 handled by the tool — your job is choosing mode/surface/accent and writing the
-copy (see `../voice/SKILL.md`; keep quotes ≤ ~200 chars, headlines ≤ ~90).
+copy (see `../voice/GUIDE.md`; keep quotes ≤ ~200 chars, headlines ≤ ~90).
 
 ## Choosing well
 

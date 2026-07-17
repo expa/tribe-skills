@@ -5,7 +5,7 @@ description: Build and review pages in the Tribe website repository using its de
 
 # Tribe Design — Web Pages
 
-For building pages in the Tribe website repo. **Read `../brand/SKILL.md` first** for
+For building pages in the Tribe website repo. **Read `../brand/GUIDE.md` first** for
 the visual system; this skill is the *implementation* layer. Also read the
 repo's `AGENTS.md` and `DESIGN.md` — they are normative.
 

@@ -88,7 +88,7 @@ tribe-design/
 └── web-pages/          guide for building pages in the website repo
 ```
 
-Each sub-skill: a `SKILL.md` the assistant reads on demand, `tool/` (runnable
+Each sub-skill: a `GUIDE.md` the assistant reads on demand, `tool/` (runnable
 generator, original website sources kept in `tool/reference/`), `assets/`
 (templates), `examples/` (verified renders it compares its output against).
 

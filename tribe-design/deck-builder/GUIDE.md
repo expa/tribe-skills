@@ -17,7 +17,7 @@ needed.
    and start from `assets/example-deck.json` or
    `examples/layout-showcase.json`. Authoring rules — one idea per slide,
    text budgets, accent cycling, figure use — in `tool/NOTES.md`; copy rules
-   in `../voice/SKILL.md`.
+   in `../voice/GUIDE.md`.
 2. **Encode**: `node tool/encode-deck.mjs deck.json --hash-only` → the hash
    (also `--decode` to inspect an existing link).
 3. **Preview**: open `tool/deck.html#<hash>` in a browser — arrow keys

@@ -7,7 +7,7 @@ description: Generate on-brand Tribe chart images from structured data, includin
 
 On-brand chart images from structured data — bar or line charts with optional
 title, eyebrow, helper/source line, and logo. Omit the text/logo params for a
-pure chart to embed in a slide or document. **Read `../brand/SKILL.md` first.**
+pure chart to embed in a slide or document. **Read `../brand/GUIDE.md` first.**
 
 ## The generator
 

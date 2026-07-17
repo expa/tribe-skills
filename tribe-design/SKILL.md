@@ -17,11 +17,11 @@ description: >-
 # Tribe Design
 
 One skill, many crafts. Each sub-skill lives in its own folder with a
-`SKILL.md` (read it before doing that kind of work), plus `tool/` (runnable
+`GUIDE.md` (read it before doing that kind of work), plus `tool/` (runnable
 generator code), `assets/` (templates, fonts, logos), and `examples/`.
 
-**Always start from `brand/SKILL.md`** for anything visual and
-**`voice/SKILL.md`** for anything written. Then pull the sub-skill for the
+**Always start from `brand/GUIDE.md`** for anything visual and
+**`voice/GUIDE.md`** for anything written. Then pull the sub-skill for the
 artifact you're making.
 
 ## The brand in one paragraph
@@ -94,7 +94,7 @@ ink eyebrows; light serif.
 
 ## Ground rules
 
-1. Read the sub-skill's `SKILL.md` before producing that artifact type.
+1. Read the sub-skill's `GUIDE.md` before producing that artifact type.
 2. Visual artifact → apply `brand/`; written words → apply `voice/`.
 3. Use the real fonts (`brand/assets/fonts/` + `brand/assets/tribe-tokens.css`)
    in any standalone artifact — fallback stacks are a last resort.

@@ -6,8 +6,8 @@ description: Create polished Tribe-branded long-form documents as self-contained
 # Tribe Design — Documents
 
 On-brand long-form documents — one-pagers, proposals, reports, briefs,
-case-study write-ups — as self-contained HTML. **Read `../brand/SKILL.md`
-first**, and `../voice/SKILL.md` for the writing itself. Output is a
+case-study write-ups — as self-contained HTML. **Read `../brand/GUIDE.md`
+first**, and `../voice/GUIDE.md` for the writing itself. Output is a
 self-contained HTML file that reads beautifully on screen and prints to a clean
 PDF (A4/Letter, proper margins, no nav chrome).
 
@@ -36,7 +36,7 @@ PDF (A4/Letter, proper margins, no nav chrome).
 
 ## Tone
 
-Write in the Tribe voice — see `../voice/SKILL.md`. Lead with the outcome.
+Write in the Tribe voice — see `../voice/GUIDE.md`. Lead with the outcome.
 Short sentences. No hype, no jargon padding. Numbers and specifics over
 adjectives.
 
