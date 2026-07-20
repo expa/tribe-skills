@@ -1,62 +1,89 @@
 ---
 name: tribe-design-documents
-description: Create polished Tribe-branded long-form documents as self-contained, print-ready HTML. Use for Tribe one-pagers, proposals, reports, briefs, case studies, and documents that must follow the official visual system and writing voice.
+description: Create Tribe-branded one-pagers, proposals, briefs, and reports by authoring document data (JSON blocks) for the website's doc generator. Exports true A4 PDFs via the generator API, and the same data file imports into the on-site editor for manual editing.
 ---
 
 # Tribe Design — Documents
 
 On-brand long-form documents — one-pagers, proposals, reports, briefs,
-case-study write-ups — as self-contained HTML. **Read `../brand/GUIDE.md`
-first**, and `../voice/GUIDE.md` for the writing itself. Output is a
-self-contained HTML file that reads beautifully on screen and prints to a clean
-PDF (A4/Letter, proper margins, no nav chrome).
+case-study write-ups. The website's **doc generator**
+(`website/app/handbook/doc-generator`, live at `/handbook/doc-generator`)
+owns ALL visual rules — typography, spacing, tokens, the A4 sheet chrome.
+Your job is only to structure the content as **document data**: a JSON file
+of ordered blocks. Never hand-style a document when the block vocabulary
+covers it.
 
-## Structure
+**Read `../brand/GUIDE.md` first**, and `../voice/GUIDE.md` for the writing.
 
-- **Masthead** — small uppercase caption eyebrow (doc type / client) in ink, a
-  serif-light title, and a meta line (date · author · confidentiality) at `/55`.
-  A hairline rule under it.
-- **Reading column** — a single centered column, max ~720px, sans-light body at
-  18px (16px print), `line-height 1.75`. Generous space above headings.
-- **Headings** — section headings serif-light (`h2`), sub-headings a heavier
-  sans (`h3`). Leave air above them.
-- **Lists** — ordered lists use zero-padded brand-cyan numerals (`01`, `02`, no
-  dot), smaller than the text, hanging indent. Unordered lists are borderless
-  with a thin left rule per item (no disc).
-- **Panel / callout** — `background-secondary`, `rounded-lg`, hairline border,
-  an uppercase caption label, 16px content. For key takeaways, scope notes,
-  pull-outs.
-- **Inline links** — brand cyan, underlined, 4px offset.
-- **Tables** — hairline rules only, caption-style uppercase headers, generous
-  row padding. No zebra fills, no heavy borders.
-- **Footer** — wordmark + page meta; repeats on print pages.
-- **Cover / section art** — for a document that needs visual impact (proposal
-  cover, section break), export art from the `../article-cover` or
-  `../animation` sub-skills and embed it — don't hand-draw a motif.
+## Workflow
 
-## Tone
+1. **Author `<name>.json`** — shape `{ "config": {…}, "blocks": […] }`.
+   Read **`assets/blocks-guide.md`** (config + all 12 block types, every
+   field, when to use each) and start from `assets/example-doc.json` — a
+   complete real one-pager.
+2. **Export the PDF** through the running website (local `npm run dev` in
+   `website/`, or the deployed site):
 
-Write in the Tribe voice — see `../voice/GUIDE.md`. Lead with the outcome.
-Short sentences. No hype, no jargon padding. Numbers and specifics over
+   ```bash
+   curl -sS -X POST http://localhost:3000/handbook/doc-generator/api/export-pdf \
+     -H 'Content-Type: application/json' --data-binary @my-doc.json -o my-doc.pdf
+   ```
+
+   Default is one continuous artboard page; add top-level
+   `"paginate": true` to the JSON for real A4 pages with print margins
+   (use for anything longer than ~1 sheet).
+3. **Deliver BOTH files, always** — the PDF and the `.json` next to it. The
+   JSON is the editable source: anyone opens `/handbook/doc-generator`,
+   clicks **Import data**, edits every block in place (text, order, widths,
+   accents, per-block AI), and re-exports. **Export data** in the editor
+   produces the same file back, so a human-edited document can return to you
+   for revision.
+
+## Document craft
+
+- **Structure**: open with one `header` block (the masthead), then alternate
+  `section` headers with their content. Use `statement` as a breather
+  between dense sections.
+- **Titles are assertions, not labels** — "Using AI is not the same as being
+  AI-native", never "Introduction".
+- **One idea per block.** Keep body copy tight — a one-pager, not an essay.
+- **Proof beats claims**: real metrics in `stats`, real stories in `cards`,
+  real quotations in `quote`. **Never invent facts, clients, metrics, or
+  quotes** — omit any field you don't have real content for (empty fields
+  render nothing).
+- **Rhythm**: never two dense item-grid blocks (`numbered`/`cards`/`stats`)
+  back to back — separate with `text`, `statement`, or a `divider`.
+- **Width**: blocks are `"full"` by default; two consecutive `"half"` blocks
+  sit side by side — use for paired content. Item-grid blocks already have
+  columns and should almost always stay full.
+- **Accents**: `teal | brown | orange | yellow | ocean` tint numerals and
+  labels. One accent per section, varied sensibly across the document;
+  default teal.
+- **Plain text only** in every field — no HTML, no markdown. Paragraph break
+  in `body` is a literal `\n\n`.
+- **Images**: hosted URLs (the CMS media library serves client/partner logos
+  from Blob storage). A `layout: "row"` images block with `tint: "ink"` is
+  the client-logo-bar treatment. For cover/section art, export from
+  `../article-cover` or `../animation` — don't hand-draw a motif.
+
+## Voice
+
+Write in the Tribe voice — see `../voice/GUIDE.md`. Editorial and calm, not
+"techy". Lead with the outcome. Short declarative headlines. Plain, concise
+body copy — no hype, no exclamation marks, numbers and specifics over
 adjectives.
 
-## Template
+## Fallback: standalone HTML
 
-`assets/document.html` is a working one-pager / proposal shell — masthead,
-sections, a numbered list, a callout panel, a table, and print styles. Replace
-the content, keep the structure. It inlines the brand tokens with fallback
-fonts; for pixel-exact type, add the `@font-face` block from
-`../brand/assets/tribe-tokens.css` (fonts ship in `../brand/assets/fonts/`).
-
-## Export
-
-Print to PDF from a browser, or headless:
-`node ../scripts/render.mjs --html <file> --pdf out.pdf`
+`assets/document.html` is a self-contained print-ready HTML shell (masthead,
+reading column, brand numerals, panel, table) for when no website is
+available or the document genuinely needs layout beyond the block
+vocabulary. Export: `node ../scripts/render.mjs --html <file> --pdf out.pdf`.
+Prefer the generator path — it's editable by non-technical people.
 
 ## Don'ts
 
-❌ Full-width body text (use the reading column) · ❌ bold serif headings ·
-❌ orange/accent eyebrows (eyebrows are ink) · ❌ accent colors as body text ·
-❌ gray boxes / heavy table borders / zebra striping · ❌ pure white page or
-pure black text · ❌ disc bullets and default numbered lists where the brand
-numerals belong.
+❌ Hand-styled HTML when blocks cover it · ❌ invented metrics, clients, or
+quotes · ❌ markdown/HTML inside block fields · ❌ two item-grids back to
+back · ❌ "Introduction"-style label titles · ❌ half-width item-grid blocks
+· ❌ shipping a PDF without its `.json` source.

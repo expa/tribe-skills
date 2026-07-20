@@ -19,7 +19,7 @@ the [Agent Skills](https://docs.claude.com) format. Lives in this repo at
 | The Tusi orbital figure (hero art, video background) | `animation` | transparent PNG, WEBM |
 | A pitch deck, case study, proposal deck | `deck-builder` | browser preview + vector PDF |
 | A system diagram or flowchart | `diagram` | SVG, PNG |
-| A proposal, one-pager, report | `documents` | print-ready HTML → PDF |
+| A proposal, one-pager, report | `documents` | doc data JSON → site generator → A4 PDF |
 | Copy that sounds like Tribe | `voice` | website & article registers |
 | Brand rules, tokens, fonts, logos | `brand` | the source of truth, bundled |
 | Pages on tribe.ai | `web-pages` | code (needs the website repo) |
@@ -84,7 +84,7 @@ tribe-design/
 ├── article-cover/      generative node artwork
 ├── deck-builder/       deck JSON → standalone renderer → vector PDF
 ├── diagram/            diagram JSON → auto-layout → branded SVG/PNG
-├── documents/          long-form document templates
+├── documents/          doc data JSON → site doc generator → editable A4 PDF
 └── web-pages/          guide for building pages in the website repo
 ```
 

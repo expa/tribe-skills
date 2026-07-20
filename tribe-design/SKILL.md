@@ -48,7 +48,7 @@ generic gray.
 | Abstract generative cover / background art | `article-cover/` | PNG / SVG / WEBM reveal |
 | Presentation, pitch, case study, proposal deck | `deck-builder/` | PDF (16:9 slides) |
 | System diagram / flowchart | `diagram/` | SVG / PNG |
-| Long-form document (proposal, one-pager, report) | `documents/` | HTML → PDF |
+| Long-form document (proposal, one-pager, report) | `documents/` | doc data JSON → A4 PDF |
 | Page or section on tribe.ai | `web-pages/` | code in the website repo |
 
 ## Exporting assets

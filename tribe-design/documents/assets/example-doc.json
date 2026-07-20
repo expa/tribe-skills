@@ -1,0 +1,115 @@
+{
+  "config": {
+    "title": "about-tribe",
+    "meta": {
+      "docLabel": "About Tribe",
+      "date": "July 2026",
+      "footerText": "www.tribe.ai",
+      "confidential": false
+    }
+  },
+  "blocks": [
+    {
+      "type": "header",
+      "width": "full",
+      "eyebrow": "About Tribe",
+      "title": "We work on the hardest AI problems for the largest enterprises in the world.",
+      "subtitle": "The problems we take on have $100M+ in enterprise value on the line."
+    },
+    {
+      "type": "text",
+      "width": "full",
+      "body": "Since our founding in 2019, AI has been the only thing we do. We build production AI for the Fortune 1000 and rewire how their people work with it. We are practitioners first — if we can't build it and get it into production, we don't take the engagement. Every engagement starts from the same place: what does this do for the business? Revenue gained, cost reduced, time recaptured. We work backwards from the outcome, not forwards from the technology."
+    },
+    {
+      "type": "image",
+      "width": "full",
+      "layout": "row",
+      "tint": "ink",
+      "images": [
+        "https://qthdn9n49w3jwrid.public.blob.vercel-storage.com/Logo_HolidayInn.svg",
+        "https://qthdn9n49w3jwrid.public.blob.vercel-storage.com/Logo_Hyatt.svg",
+        "https://qthdn9n49w3jwrid.public.blob.vercel-storage.com/client-koch.svg",
+        "https://qthdn9n49w3jwrid.public.blob.vercel-storage.com/Logo_Panasonic.svg",
+        "https://qthdn9n49w3jwrid.public.blob.vercel-storage.com/Logo_Cushman_Wakefield.svg",
+        "https://qthdn9n49w3jwrid.public.blob.vercel-storage.com/client-fis.svg"
+      ]
+    },
+    {
+      "type": "statement",
+      "width": "full",
+      "title": "Using AI is not the same as being AI-native.",
+      "body": "Almost every enterprise has bought the tools and run the pilots. Few have reinvented how they actually create value, and that gap is now a CEO-level bet. Closing it takes change on two fronts — what you build and how your people work. We do both."
+    },
+    {
+      "type": "section",
+      "width": "full",
+      "eyebrow": "Agentic tooling practice",
+      "title": "How you work",
+      "body": "Buying the tools is the easy part. Tools don't make an organization AI-native; people working differently do. We redesign how your teams and agents work together, then build the governance and measurement that let early wins compound across the org.",
+      "accent": "teal"
+    },
+    {
+      "type": "numbered",
+      "width": "full",
+      "title": "6 focused interventions",
+      "columns": 3,
+      "accent": "teal",
+      "items": [
+        { "title": "Foundation assessment", "body": "Baseline your teams, tools, culture, and governance against your priorities to surface the real opportunities and blockers." },
+        { "title": "Governance system", "body": "A framework that fits your goals and guardrails, so early wins spread beyond the power users to the whole org." },
+        { "title": "Human × agent workflow redesign", "body": "Senior practitioners embed in your priority teams and take new workflows from idea to production." },
+        { "title": "AI skills building", "body": "Build fluency across three levels: users, builders, and stewards." },
+        { "title": "Community of champions", "body": "Identify and grow the internal champions who carry the work forward after we leave." },
+        { "title": "ROI measurement", "body": "Co-develop a calculator that ties agentic tool usage directly to business value." }
+      ]
+    },
+    {
+      "type": "cards",
+      "width": "full",
+      "eyebrow": "Customer stories",
+      "columns": 2,
+      "accent": "teal",
+      "items": [
+        { "body": "One of the largest US insurers started with Claude Code workshops for a group of their engineers; that foothold grew into a CTO-sponsored modernization effort, anchored by an always-on repository intelligence layer grading ~19,000 repos on migration readiness." },
+        { "body": "A game studio behind one of the world's biggest franchises ran six hands-on workshops reaching ~3,500 people across 25+ business units. Weekly active users rose 47% and non-engineer retention climbed ~9x." }
+      ]
+    },
+    {
+      "type": "section",
+      "width": "full",
+      "eyebrow": "Custom engagements",
+      "title": "What you build",
+      "body": "This is AI at the center of the business itself — what you sell and how you run. Outward, AI built into how you serve customers. Inward, purpose-built agents that compress cycle times and codify institutional knowledge.",
+      "accent": "ocean"
+    },
+    {
+      "type": "text",
+      "width": "full",
+      "body": "The vision is rarely the problem — delivery is. Most AI consulting is staff augmentation in a nicer wrapper. We take the opposite approach: you name the result that matters, and getting it live in production in your environment is ours to solve."
+    },
+    {
+      "type": "list",
+      "width": "full",
+      "title": "The whole stack of skills, as one team",
+      "items": [
+        { "title": "Product", "body": "Keeps the build aimed at a business result, not a demo." },
+        { "title": "AI engineering", "body": "Makes models reliable enough to put in front of real users." },
+        { "title": "Software engineering", "body": "Holds up under Fortune 500 load and scrutiny." },
+        { "title": "Agentic tooling", "body": "Lets the system run, monitor, and improve itself." },
+        { "title": "Delivery & governance", "body": "Gets you through security, audit, and go-live." }
+      ]
+    },
+    {
+      "type": "cards",
+      "width": "full",
+      "eyebrow": "Customer stories",
+      "columns": 2,
+      "accent": "ocean",
+      "items": [
+        { "body": "One of the largest US pay-TV providers ships the same apps across 12+ platforms. We built a Claude-powered vision-language agent that runs entire test plans on its own — the longest test dropped from five hours to 35 minutes, and false positives from hundreds to under three." },
+        { "body": "A global vacation ownership company sells 200,000 promotional packages a year. We built Holli, a voice and chat AI booking agent — an early email campaign doubled bookings, and the CIO pushed straight to production." }
+      ]
+    }
+  ]
+}
